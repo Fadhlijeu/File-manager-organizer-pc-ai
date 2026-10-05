@@ -65,11 +65,15 @@ class AgentToolbox:
     @staticmethod
     def powershell_exec(command: str, cwd: str = "D:\\") -> str:
         """Executes any arbitrary PowerShell command/script on the host."""
-        dangerous = ['format ', 'format-volume', 'diskpart', 'del /s /q c:\\windows', 'rmdir /s /q c:\\windows']
+        dangerous = ['format ', 'format-volume', 'diskpart', 'del /s /q c:\\\\windows', 'rmdir /s /q c:\\\\windows']
         cmd_lower = command.lower()
         for d in dangerous:
             if d in cmd_lower:
                 return f"Error: Command blocked by AgentOS security policy (dangerous pattern: {d})"
+        
+        dangerous_delete = ['remove-item', 'del ', 'rmdir ', 'erase ']
+        if any(dd in cmd_lower for dd in dangerous_delete):
+            return "BLOCKED BY SAFETY GUARD: Direct file deletion via powershell_exec is disabled. Gunakan tool 'safe_delete' setelah meminta konfirmasi eksplisit kepada pengguna."
         
         try:
             if not os.path.exists(cwd):
@@ -120,7 +124,8 @@ class AgentToolbox:
                             entries.append(f"{prefix} {entry.name}")
                         if len(entries) >= max_items:
                             break
-            summary = f"Total items shown: {len(entries)} (Path: {path})\n"
+            total_tree_files = sum(len(f) for _, _, f in os.walk(path)) if os.path.isdir(path) else 1
+            summary = f"Total berkas di tree direktori: {total_tree_files} berkas | Menampilkan {len(entries)} item (limit {max_items}):\n"
             return summary + "\n".join(entries)
         except Exception as e:
             return f"Error listing directory: {str(e)}"
@@ -218,8 +223,8 @@ class PathResolver:
         # 3. Check in key spaces
         if not resolved_path:
             spaces = [
-                r"D:\\Kuliah", r"D:\\Kuliah\3KA31", r"D:\\Kuliah\2KA31",
-                r"D:\DOWNLOAD", r"D:\PROJECT", r"D:\Game", r"D:\fadhl",
+                r"D:\\Kuliah", os.path.join(r"D:\\Kuliah", "3KA31"), os.path.join(r"D:\\Kuliah", "2KA31"),
+                r"D:\\DOWNLOAD", r"D:\\PROJECT", r"D:\\Game", r"D:\\fadhl",
                 os.path.expanduser(r"~\OneDrive\Documents")
             ]
             for s in spaces:
@@ -377,7 +382,7 @@ class AutonomousAgent:
                     lines.append(f"  Preview Isi Dokumen:\n    {preview[:500]}")
         return "\n".join(lines)
 
-    def _execute_tool(self, action_name: str, args: Dict[str, Any], current_path: str) -> str:
+    def _execute_tool(self, action_name: str, args: Dict[str, Any], current_path: str, user_prompt: str = '') -> str:
         try:
             if action_name == 'powershell_exec':
                 cmd = args.get('command', '')
@@ -406,6 +411,11 @@ class AutonomousAgent:
                 return self.toolbox.rename(src, new_name)
             elif action_name == 'safe_delete':
                 path = args.get('path', '')
+                force = args.get('force', False)
+                confirmed = args.get('confirmed', False)
+                user_confirmed = any(w in (user_prompt or '').lower() for w in ['ya hapus', 'ya, hapus', 'konfirmasi', 'confirm', 'setuju', 'yes delete'])
+                if not force and not confirmed and not user_confirmed:
+                    return f"CONFIRMATION_REQUIRED: Anda akan menghapus '{path}'. Balas dengan 'ya hapus' untuk mengkonfirmasi penghapusan ini ke Recycle Bin."
                 return self.toolbox.delete_trash(path)
             elif action_name == 'create_folder':
                 path = args.get('path', '')
@@ -431,10 +441,10 @@ INFORMASI HOST & KONTEKS:
 - Berkas/Path yang di-Mention User (@file:, @folder:, @path:):
 {self._format_resolved_mentions_for_prompt(resolved_mentions)}
 - Direktori Kuliah: D:\\Kuliah (terbagi atas 2KA31 dan 3KA31)
-- Direktori Unduhan: D:\DOWNLOAD
-- Direktori Proyek: D:\PROJECT
-- Direktori Game: D:\Game
-- Direktori Pengguna: D:\fadhl dan OneDrive Documents
+- Direktori Unduhan: D:\\DOWNLOAD
+- Direktori Proyek: D:\\PROJECT
+- Direktori Game: D:\\Game
+- Direktori Pengguna: D:\\fadhl dan OneDrive Documents
 
 DAFTAR TOOLS TERSEDIA:
 1. powershell_exec(command: str, cwd: str)
@@ -451,6 +461,7 @@ DAFTAR TOOLS TERSEDIA:
    Mengubah nama berkas/folder.
 7. safe_delete(path: str)
    Menghapus berkas ke Windows Recycle Bin (send2trash).
+   WAJIB: Sebelum memanggil safe_delete, SELALU panggil tool finish dulu dengan final_answer berisi konfirmasi yang meminta persetujuan user. Jangan langsung hapus tanpa konfirmasi eksplisit dalam pesan user.
 8. create_folder(path: str)
    Membuat folder baru.
 9. get_course_catalog()
@@ -472,7 +483,9 @@ ATURAN PENTING:
 - JANGAN PERNAH berasumsi Anda tidak tahu isi file atau folder. Selalu jalankan `powershell_exec` atau `list_directory` untuk memeriksanya!
 - Jika pengguna bertanya 'ada berapa total file perkuliahan', segera jalankan powershell_exec untuk menghitung total dan rincian semester!
 - Jika pengguna meminta 'rapihkan folder ...', amati isi foldernya, baca dokumen jika perlu, pindahkan berkas ke tempat yang tepat, lalu laporkan hasilnya.
-- Jawaban final (`final_answer`) HARUS berupa Markdown yang rapi, informatif, menyajikan data angka konkret dan path absolut."""
+- Jawaban final (`final_answer`) HARUS berupa Markdown yang rapi, informatif, menyajikan data angka konkret dan path absolut.
+- KRITIS - DELETE SAFETY: Jika user meminta hapus file, JANGAN langsung eksekusi safe_delete atau Remove-Item di PowerShell. Wajib gunakan `finish` terlebih dahulu dengan final_answer yang meminta konfirmasi dari user: "Apakah Anda yakin ingin menghapus [nama file]? Balas 'ya hapus' untuk mengkonfirmasi."
+- Setelah user membalas dengan konfirmasi eksplisit ('ya', 'ya hapus', dll), barulah eksekusi penghapusan dengan menambahkan confirmed=True dalam args safe_delete."""
 
         current_prompt = f"Permintaan Pengguna: {user_prompt}"
         if mentioned_items:
@@ -531,7 +544,7 @@ ATURAN PENTING:
                 }
 
             # Execute tool
-            output = self._execute_tool(action, args, current_path)
+            output = self._execute_tool(action, args, current_path, user_prompt=user_prompt)
             events.append({
                 'step': turn,
                 'thought': thought,
@@ -565,6 +578,53 @@ ATURAN PENTING:
         actions_taken = []
         prompt_lower = user_prompt.lower()
 
+        # Delete Safety Guard in Local Mode
+        if any(w in prompt_lower for w in ['hapus', 'delete', 'remove', 'hilangkan', 'buang']):
+            is_confirmed = any(w in prompt_lower for w in ['ya hapus', 'ya, hapus', 'konfirmasi', 'confirm', 'setuju', 'yes'])
+            target_file = ""
+            if resolved_mentions:
+                for rm in resolved_mentions:
+                    if rm.get('resolved_path'):
+                        target_file = rm['resolved_path']
+                        break
+            if not target_file:
+                m = re.search(r'(?:hapus|delete|remove)\s+(?:file|berkas)?\s*([^\s,]+)', user_prompt, re.I)
+                if m:
+                    target_file = m.group(1).strip('"\'')
+            
+            if not is_confirmed:
+                events.append({
+                    'step': 1,
+                    'thought': f"Mendeteksi permintaan penghapusan berkas '{target_file}'. Memerlukan konfirmasi pengguna sesuai safety policy.",
+                    'tool': 'safe_delete',
+                    'args': {'path': target_file, 'confirmed': False},
+                    'output': "CONFIRMATION_REQUIRED"
+                })
+                reply = f"""### Konfirmasi Diperlukan untuk Menghapus Berkas
+
+Sistem keselamatan OmniFile AI mendeteksi operasi penghapusan file. Untuk mencegah kehilangan data:
+
+- **Target Berkas**: `{target_file or 'berkas yang dimaksud'}`
+- **Tindakan**: Berkas akan dipindahkan secara aman ke Windows Recycle Bin.
+
+> Mohon konfirmasi: Balas **"ya hapus"** jika Anda yakin ingin memindahkan berkas ini ke Recycle Bin."""
+                return {'reply': reply, 'events': events, 'actions_taken': []}
+            else:
+                del_res = self.toolbox.delete_trash(target_file) if target_file else "Nama file tidak spesifik."
+                events.append({
+                    'step': 1,
+                    'thought': f"Pengguna telah memberikan konfirmasi eksplisit. Menghapus '{target_file}' ke Recycle Bin.",
+                    'tool': 'safe_delete',
+                    'args': {'path': target_file, 'confirmed': True},
+                    'output': del_res
+                })
+                reply = f"""### Penghapusan Berkas Berhasil
+
+Berkas `{target_file}` telah dipindahkan ke **Windows Recycle Bin**.
+Status: {del_res}"""
+                actions_taken.append(f"safe_delete: {target_file}")
+                return {'reply': reply, 'events': events, 'actions_taken': actions_taken}
+
         # 1. Total Coursework / File Count Query
         if any(w in prompt_lower for w in ['berapa', 'total', 'jumlah', 'hitung']) and any(w in prompt_lower for w in ['kuliah', 'perkuliahan', 'file', 'dokumen', 'berkas', 'materi']):
             target_dir = r"D:\\Kuliah"
@@ -576,9 +636,9 @@ ATURAN PENTING:
             elif mentioned_items:
                 target_dir = mentioned_items[0]
             elif '2ka31' in prompt_lower:
-                target_dir = r"D:\\KuliahKA31"
+                target_dir = os.path.join(r"D:\\Kuliah", "2KA31")
             elif '3ka31' in prompt_lower:
-                target_dir = r"D:\\KuliahKA31"
+                target_dir = os.path.join(r"D:\\Kuliah", "3KA31")
 
             # Step 1: Count total files via PowerShell
             cmd_count = f"(Get-ChildItem -Path '{target_dir}' -Recurse -File -ErrorAction SilentlyContinue).Count"
@@ -625,7 +685,7 @@ Berdasarkan pemindaian real-time kernel file system di direktori [`{target_dir}`
 | :--- | :--- |
 {breakdown_table}
 
-> **Status Integritas**: Semua berkas aktif, terstruktur, dan tersinkronisasi di drive `D:\`. Anda dapat meminta saya untuk merapikan, memindahkan, atau mencari materi tertentu secara langsung."""
+> **Status Integritas**: Semua berkas aktif, terstruktur, dan tersinkronisasi di drive `D:`. Anda dapat meminta saya untuk merapikan, memindahkan, atau mencari materi tertentu secara langsung."""
 
             return {
                 'reply': reply,
@@ -639,7 +699,7 @@ Berdasarkan pemindaian real-time kernel file system di direktori [`{target_dir}`
             if mentioned_items:
                 target_dir = mentioned_items[0]
             elif 'download' in prompt_lower:
-                target_dir = r"D:\DOWNLOAD"
+                target_dir = r"D:\\DOWNLOAD"
             elif 'dokumen' in prompt_lower or 'documents' in prompt_lower:
                 target_dir = os.path.expanduser(r"~\OneDrive\Documents")
 
@@ -669,10 +729,10 @@ Berdasarkan pemindaian real-time kernel file system di direktori [`{target_dir}`
 
 Agen telah memindai berkas-berkas di folder ini. Berikut adalah tindakan terencana:
 
-1. **Berkas Kuliah**: Berkas tugas, slide, dan materi kuliah akan dialokasikan otomatis ke subdirektori mata kuliah di `D:\\Kuliah\3KA31\` atau `D:\\Kuliah\2KA31\`.
-2. **Installer & Executable**: Installer (.exe, .msi) dialokasikan ke `D:\DOWNLOAD\Installers`.
-3. **Minecraft Assets**: Shaderpacks (.zip) dan Mods (.jar) dialokasikan ke `D:\Game\Minecraft Assets`.
-4. **Dokumen Umum**: Dokumen pribadi dialokasikan ke `D:\fadhl\Documents`.
+1. **Berkas Kuliah**: Berkas tugas, slide, dan materi kuliah akan dialokasikan otomatis ke subdirektori mata kuliah di `D:\\Kuliah\\3KA31` atau `D:\\Kuliah\\2KA31`.
+2. **Installer & Executable**: Installer (.exe, .msi) dialokasikan ke `D:\\DOWNLOAD\\Installers`.
+3. **Minecraft Assets**: Shaderpacks (.zip) dan Mods (.jar) dialokasikan ke `D:\\Game\\Minecraft Assets`.
+4. **Dokumen Umum**: Dokumen pribadi dialokasikan ke `D:\\fadhl\\Documents`.
 
 *Untuk mengeksekusi pemindahan sekaligus, Anda juga dapat menekan tombol **Eksekusi & Pindahkan Semua** pada panel Incoming Queue.*"""
 

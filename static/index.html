@@ -485,18 +485,18 @@
               </div>
             </div>
 
-            <div class="panel-surface" style="padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); height: 100%; box-sizing: border-box;">
+            <div class="panel-surface" style="padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); flex: 1; min-height: 0; box-sizing: border-box;">
               
               <!-- Chat Stream Box -->
               <div class="chat-history-box" id="chatHistoryBox">
                 <div class="chat-bubble-ai">
                   Halo <strong>Muhammad Fadhli</strong>. Saya adalah Autonomous File Manager Agent Anda. Saya memiliki akses host langsung untuk membaca berkas, menjalankan query PowerShell, mencari dokumen, dan melakukan operasi CRUD file secara aman.<br><br>
-                  Coba tanyakan: <em>"Ada berapa total file perkuliahan dan rinciannya?"</em> atau gunakan pill <strong>@file:</strong>, <strong>@folder:</strong>, dan <strong>@path:</strong> di bawah untuk menandai target berkas/folder tertentu.
+                  Coba tanyakan: <em>"Ada berapa total file perkuliahan dan rinciannya?"</em> atau gunakan pill <span class="mention-card file" title="@file:"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><span>@file:</span></span> <span class="mention-card folder" title="@folder:"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg><span>@folder:</span></span> <span class="mention-card path" title="@path:"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><line x1="22" y1="12" x2="2" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg><span>@path:</span></span> di bawah untuk menandai target berkas/folder tertentu.
                 </div>
               </div>
 
               <!-- Quick Prompts Strip -->
-              <div style="display: flex; gap: var(--space-2); overflow-x: auto; padding-bottom: 2px; flex-shrink: 0;">
+              <div class="quick-prompts-strip" style="display: flex; gap: var(--space-2); overflow-x: auto; padding-bottom: 2px; flex-shrink: 0;">
                 <button class="btn-clean" onclick="sendQuickPrompt('Ada berapa total file perkuliahan di D:\\Kuliah dan rinciannya?')">
                   <i data-lucide="graduation-cap"></i> Total Berkas Kuliah
                 </button>
@@ -512,7 +512,7 @@
               </div>
 
               <!-- Chat Input Wrapper with @ Mention -->
-              <div style="position: relative; display: flex; flex-direction: column; gap: 4px; flex-shrink: 0;">
+              <div class="chat-input-wrapper" style="position: relative; display: flex; flex-direction: column; gap: 4px; flex-shrink: 0;">
                 
                 <!-- Quick Mention Pills -->
                 <div class="mention-quick-pills">

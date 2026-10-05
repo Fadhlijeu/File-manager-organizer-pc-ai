@@ -1088,7 +1088,9 @@ async function handleChatSubmit(e) {
 
     // Markdown content
     const finalMd = data.reply || "Tugas selesai.";
-    bubbleContent += `<div class="agent-final-content">${renderMarkdown(finalMd)}</div>`;
+    let renderedMd = renderMarkdown(finalMd);
+    renderedMd = formatMentionTagsInHtml(renderedMd);
+    bubbleContent += `<div class="agent-final-content">${renderedMd}</div>`;
 
     aiBubble.innerHTML = bubbleContent;
 
@@ -1105,33 +1107,37 @@ async function handleChatSubmit(e) {
 }
 
 function renderAgentEventAccordion(events) {
+  if (!events || events.length === 0) return '';
   const count = events.length;
   let stepsHtml = '';
 
   events.forEach(ev => {
     const toolArgs = ev.args ? JSON.stringify(ev.args, null, 2) : '';
     stepsHtml += `
-      <div style="border-left: 2px solid var(--color-border); padding-left: 10px; margin-bottom: 8px;">
-        <div style="font-size: 11.5px; font-weight: 600; color: var(--color-text);">
+      <div class="agent-step">
+        <div class="agent-step-thought">
           Langkah ${ev.step}: ${escapeHtml(ev.thought || 'Investigasi host')}
         </div>
-        <div style="margin-top: 3px;">
-          <span style="font-family: var(--font-mono); font-size: 10.5px; background: #f1f2f4; padding: 1px 6px; border-radius: 3px;">
+        <div>
+          <span class="agent-step-tool">
             ${escapeHtml(ev.tool || 'powershell_exec')}
           </span>
         </div>
-        ${toolArgs ? `<pre style="background: #f8f8f8; padding: 4px 6px; border-radius: 4px; font-size: 10.5px; margin-top: 3px;"><code>${escapeHtml(toolArgs)}</code></pre>` : ''}
-        ${ev.output ? `<div style="background: #ffffff; border: 1px solid var(--color-border); padding: 4px 6px; border-radius: 4px; font-size: 10.5px; margin-top: 3px; max-height: 100px; overflow-y: auto;"><strong>Output:</strong><br>${escapeHtml(ev.output)}</div>` : ''}
+        ${toolArgs ? `<pre style="background: #f8f8f8; padding: 4px 6px; border-radius: 4px; font-size: 10.5px; margin-top: 3px; max-width: 100%; overflow-x: auto;"><code>${escapeHtml(toolArgs)}</code></pre>` : ''}
+        ${ev.output ? `<div class="agent-step-output"><strong>Output:</strong><br>${escapeHtml(ev.output)}</div>` : ''}
       </div>
     `;
   });
 
   return `
-    <details style="margin-bottom: 10px; border: 1px solid var(--color-border); border-radius: var(--radius-inner); padding: 6px 10px; background: #ffffff;" open>
-      <summary style="font-size: 11.5px; font-weight: 600; color: var(--color-secondary); cursor: pointer;">
-        Aktivitas Investigasi Agen (${count} langkah)
+    <details class="agent-accordion">
+      <summary>
+        <span>Aktivitas Investigasi Agen (${count} langkah)</span>
+        <svg class="agent-accordion-chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
       </summary>
-      <div style="margin-top: 8px;">
+      <div class="agent-accordion-body">
         ${stepsHtml}
       </div>
     </details>
@@ -1410,21 +1416,42 @@ function selectMentionValue(type, rawVal) {
   showToast(`Target di-mention: @${type}:${safeVal}`);
 }
 
+const MENTION_ICONS = {
+  file: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
+  folder: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>',
+  path: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><line x1="22" y1="12" x2="2" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>'
+};
+
 function formatMentionTagsInMessage(rawText) {
+  if (!rawText) return '';
   let escaped = escapeHtml(rawText);
-  escaped = escaped.replace(/@(file):(?:"([^"]+)"|([^\s,]+))/gi, (match, type, qVal, rawVal) => {
-    const val = qVal || rawVal;
-    return `<span class="mention-tag file">@file:${val}</span>`;
+
+  // Match @(file|folder|path):"val" or @(file|folder|path):&quot;val&quot; or @(file|folder|path):val or just @(file|folder|path):
+  const mentionRegex = /@(file|folder|path):(?:(?:&quot;|")([^"&]+)(?:&quot;|")|([^\s,<>&]+))?/gi;
+
+  escaped = escaped.replace(mentionRegex, (match, type, qVal, rawVal) => {
+    const t = type.toLowerCase();
+    const val = (qVal || rawVal || '').trim();
+    const icon = MENTION_ICONS[t] || '';
+    const label = val ? val : `@${t}:`;
+    const titleAttr = val ? `@${t}:${val}` : `@${t}:`;
+    return `<span class="mention-card ${t}" title="${escapeHtml(titleAttr)}">${icon}<span>${escapeHtml(label)}</span></span>`;
   });
-  escaped = escaped.replace(/@(folder):(?:"([^"]+)"|([^\s,]+))/gi, (match, type, qVal, rawVal) => {
-    const val = qVal || rawVal;
-    return `<span class="mention-tag folder">@folder:${val}</span>`;
-  });
-  escaped = escaped.replace(/@(path):(?:"([^"]+)"|([^\s,]+))/gi, (match, type, qVal, rawVal) => {
-    const val = qVal || rawVal;
-    return `<span class="mention-tag path">@path:${val}</span>`;
-  });
+
   return escaped;
+}
+
+function formatMentionTagsInHtml(html) {
+  if (!html) return '';
+  const mentionRegex = /@(file|folder|path):(?:(?:&quot;|")([^"&]+)(?:&quot;|")|([^\s,<>&]+))?/gi;
+  return html.replace(mentionRegex, (match, type, qVal, rawVal) => {
+    const t = type.toLowerCase();
+    const val = (qVal || rawVal || '').trim();
+    const icon = MENTION_ICONS[t] || '';
+    const label = val ? val : `@${t}:`;
+    const titleAttr = val ? `@${t}:${val}` : `@${t}:`;
+    return `<span class="mention-card ${t}" title="${escapeHtml(titleAttr)}">${icon}<span>${escapeHtml(label)}</span></span>`;
+  });
 }
 
 /* ========================================================

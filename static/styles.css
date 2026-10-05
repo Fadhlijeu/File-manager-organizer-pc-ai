@@ -1379,6 +1379,7 @@ a {
 .chat-bubble-ai {
   align-self: flex-start;
   max-width: 88%;
+  width: fit-content;
   background-color: #ffffff;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-ctrl);
@@ -1386,16 +1387,70 @@ a {
   font-size: 12.5px;
   line-height: 1.6;
   color: var(--color-text);
+  overflow: hidden;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  box-sizing: border-box;
+}
+
+/* Inner rendered markdown content */
+.chat-bubble-ai .agent-final-content {
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.chat-bubble-ai .agent-final-content pre,
+.chat-bubble-ai .agent-final-content code {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.chat-bubble-ai .agent-final-content table {
+  width: 100%;
+  font-size: 11.5px;
+  border-collapse: collapse;
+}
+
+.chat-bubble-ai .agent-final-content td,
+.chat-bubble-ai .agent-final-content th {
+  padding: 4px 8px;
+  border: 1px solid var(--color-border);
+  text-align: left;
 }
 
 .chat-bubble-user {
   align-self: flex-end;
   max-width: 82%;
+  width: fit-content;
   background-color: var(--color-accent);
   color: #ffffff;
   border-radius: var(--radius-ctrl);
   padding: 9px 13px;
   font-size: 12.5px;
+  line-height: 1.5;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.chat-bubble-user .mention-card.file {
+  background-color: #1e3a8a;
+  color: #dbeafe;
+  border: 1px solid #3b82f6;
+}
+
+.chat-bubble-user .mention-card.folder {
+  background-color: #78350f;
+  color: #fef3c7;
+  border: 1px solid #f59e0b;
+}
+
+.chat-bubble-user .mention-card.path {
+  background-color: #064e3b;
+  color: #d1fae5;
+  border: 1px solid #10b981;
 }
 
 .chat-input-clean-bar {
@@ -1498,25 +1553,153 @@ a {
   flex-direction: column;
 }
 
-/* The inner flex container holding chat + input */
-#view-home .panel-surface > div {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-/* Chat history fills remaining height */
+/* Chat history fills remaining height dynamically */
 #view-home .chat-history-box {
-  flex: 1;
-  min-height: 200px;
+  flex: 1 1 0%;
+  min-height: 220px;
   max-height: none;
   overflow-y: auto;
 }
 
-/* Quick prompts and input area should not shrink */
+/* Quick prompts, input wrapper, and pills must not shrink or expand */
+#view-home .quick-prompts-strip,
+#view-home .chat-input-wrapper,
 #view-home .mention-quick-pills,
 #view-home .chat-input-clean-bar {
   flex-shrink: 0;
+  flex-grow: 0;
 }
 
+
+/* ============================================================ */
+/* MENTION VISUAL CARDS                                         */
+/* ============================================================ */
+.mention-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 6px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  vertical-align: middle;
+  margin: 0 2px;
+  cursor: default;
+  white-space: nowrap;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mention-card svg {
+  flex-shrink: 0;
+}
+
+.mention-card.file {
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.mention-card.folder {
+  background-color: #fffbeb;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
+.mention-card.path {
+  background-color: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+
+/* Agent accordion — collapsed by default */
+.agent-accordion {
+  margin-bottom: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-inner);
+  background: #fafafa;
+  overflow: hidden;
+}
+
+.agent-accordion summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-secondary);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  background: #f5f5f5;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.agent-accordion summary::-webkit-details-marker { display: none; }
+
+.agent-accordion[open] summary {
+  background: #f0f0f0;
+}
+
+.agent-accordion-chevron {
+  margin-left: auto;
+  transition: transform 0.15s ease;
+}
+
+.agent-accordion[open] .agent-accordion-chevron {
+  transform: rotate(180deg);
+}
+
+.agent-accordion-body {
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.agent-step {
+  border-left: 2px solid var(--color-border);
+  padding-left: 10px;
+}
+
+.agent-step-thought {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--color-text);
+  line-height: 1.4;
+}
+
+.agent-step-tool {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: #e8e8e8;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-top: 3px;
+}
+
+.agent-step-output {
+  background: #ffffff;
+  border: 1px solid var(--color-border);
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  margin-top: 4px;
+  max-height: 90px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Chat separator between bubbles */
+.chat-history-box > .chat-bubble-ai,
+.chat-history-box > .chat-bubble-user {
+  flex-shrink: 0;
+}
