@@ -39,6 +39,7 @@ let allCurrentFiles = [];
 let allQueueItems = [];
 let selectedQueueIds = new Set();
 let ws = null;
+let liveAgentPhaseTimer = null;
 
 // Global Custom User Models List
 let savedCustomModels = [];
@@ -749,7 +750,6 @@ async function testCurrentProviderKey() {
       })
     });
     const data = await res.json();
-    clearInterval(phaseTimer);
     showTestResultBanner(data.success, data.message);
   } catch (err) {
     showTestResultBanner(false, `Gagal memverifikasi API: ${err.message}`);
@@ -866,7 +866,6 @@ async function saveAllSettingsForm() {
       body: JSON.stringify(payload)
     });
     const data = await res.json();
-    clearInterval(phaseTimer);
     if (data.success) {
       showToast("Pengaturan berhasil disimpan & diterapkan ke sistem!");
       loadSettingsFromServer();
@@ -886,7 +885,6 @@ async function navigatePath(targetPath) {
   try {
     const res = await fetch(`/api/browse?path=${encodeURIComponent(targetPath)}`);
     const data = await res.json();
-    clearInterval(phaseTimer);
 
     if (data.error) {
       showToast(`Gagal memuat direktori: ${data.error}`);
@@ -1079,7 +1077,6 @@ async function openFilePreview(path) {
   try {
     const res = await fetch(`/api/file/preview?path=${encodeURIComponent(path)}`);
     const data = await res.json();
-    clearInterval(phaseTimer);
     const dlg = document.getElementById('previewModalDialog');
     const title = document.getElementById('modalFileName');
     const body = document.getElementById('modalFileBody');
@@ -1204,7 +1201,8 @@ async function handleChatSubmit(e) {
     { title: "Menyusun respons laporan terstruktur & widget visual...", detail: "Mengemas data hasil observasi menjadi format analitis..." }
   ];
   let phaseIdx = 0;
-  const phaseTimer = setInterval(() => {
+  if (liveAgentPhaseTimer) clearInterval(liveAgentPhaseTimer);
+  liveAgentPhaseTimer = setInterval(() => {
     phaseIdx = (phaseIdx + 1) % livePhases.length;
     const stTitle = document.getElementById('liveAgentStatus');
     const stDetail = document.getElementById('liveAgentDetailText');
@@ -1233,7 +1231,7 @@ async function handleChatSubmit(e) {
       })
     });
     const data = await res.json();
-    clearInterval(phaseTimer);
+    if (liveAgentPhaseTimer) { clearInterval(liveAgentPhaseTimer); liveAgentPhaseTimer = null; }
 
     let bubbleContent = '';
 
@@ -1264,7 +1262,7 @@ async function handleChatSubmit(e) {
       fetchStorageDetails();
     }
   } catch (err) {
-    clearInterval(phaseTimer);
+    if (liveAgentPhaseTimer) { clearInterval(liveAgentPhaseTimer); liveAgentPhaseTimer = null; }
     aiBubble.innerHTML = `<span style="color: var(--color-danger);">Error komunikasi: ${escapeHtml(err.message)}</span>`;
   }
   box.scrollTop = box.scrollHeight;
@@ -1813,7 +1811,6 @@ async function fetchStorageDetails() {
   try {
     const res = await fetch('/api/storage/details');
     const data = await res.json();
-    clearInterval(phaseTimer);
     renderStorageDetails(data);
   } catch (e) {
     console.warn("Storage fetch error:", e);
