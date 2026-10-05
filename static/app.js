@@ -1,3 +1,20 @@
+
+// Marked.js Configuration: disable 4-space indented code blocks so markdown lists and HTML never become code blocks
+if (typeof marked !== 'undefined' && marked.use) {
+  try {
+    marked.use({
+      tokenizer: {
+        code(src) {
+          // Disable 4-space indented code blocks completely
+          return false;
+        }
+      }
+    });
+  } catch (e) {
+    console.warn("Could not customize marked tokenizer:", e);
+  }
+}
+
 /* ==========================================================================
    OmniFile AI — Controller Engine & Neutral Support Dashboard UI
    Inspired by Nuvio Support: Monochromatic, Desktop-First, High-Density
@@ -25,6 +42,24 @@ let ws = null;
 
 // Global Custom User Models List
 let savedCustomModels = [];
+
+// Global User Models Registry (Full User Freedom: Delete, Add, Modify)
+const DEFAULT_MODELS_REGISTRY = [
+  { id: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash Lite (Cepat & Default)", provider: "gemini" },
+  { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash (Performa Tinggi)", provider: "gemini" },
+  { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro (Penalaran Kompleks)", provider: "gemini" },
+  { id: "gemini-1.5-pro", label: "Gemini 1.5 Pro (Jendela Konteks Luas)", provider: "gemini" },
+  { id: "openrouter/anthropic/claude-3.5-sonnet", label: "Claude 3.5 Sonnet (OpenRouter)", provider: "openrouter" },
+  { id: "openrouter/deepseek/deepseek-r1", label: "DeepSeek R1 (OpenRouter)", provider: "openrouter" },
+  { id: "groq/llama-3.3-70b-versatile", label: "Llama 3.3 70B Versatile (~300 t/s)", provider: "groq" },
+  { id: "deepseek/deepseek-chat", label: "DeepSeek-V3 Official", provider: "deepseek" },
+  { id: "openai/gpt-4o-mini", label: "GPT-4o Mini (OpenAI)", provider: "openai" },
+  { id: "local-heuristic", label: "Agen Mandiri Offline (PowerShell)", provider: "local" }
+];
+
+let userModelsRegistry = [...DEFAULT_MODELS_REGISTRY];
+let editingModelId = null;
+
 
 // Provider & Models Catalog (8 Providers + Full User Freedom)
 const PROVIDER_METADATA = {
@@ -566,8 +601,22 @@ async function loadSettingsFromServer() {
     const pill = document.getElementById('settingsActiveProviderPill');
     if (pill) pill.textContent = `Active: ${PROVIDER_METADATA[activeProvider]?.name || activeProvider}`;
 
-    // Update AI Assistant model selector dynamically
-    refreshChatModelDropdown();
+    // Load and synchronize user models registry (persisted in config.json or localStorage)
+    if (cfg.models_registry && Array.isArray(cfg.models_registry) && cfg.models_registry.length > 0) {
+      userModelsRegistry = cfg.models_registry;
+    } else {
+      const localSaved = localStorage.getItem('omnifile_models_registry');
+      if (localSaved) {
+        try {
+          const parsed = JSON.parse(localSaved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            userModelsRegistry = parsed;
+          }
+        } catch(e){}
+      }
+    }
+    populateModelSelects();
+    renderModelsManagementTable();
 
     initLucide();
   } catch (err) {
@@ -1179,7 +1228,8 @@ async function handleChatSubmit(e) {
         message: fullMessage,
         current_path: currentPath,
         mentioned_items: submittedMentions,
-        model_override: activeModel
+        model_override: activeModel,
+        provider_override: (userModelsRegistry.find(m => m.id === activeModel) || {}).provider || activeProvider
       })
     });
     const data = await res.json();
@@ -1259,7 +1309,7 @@ function renderAgentEventAccordion(events) {
   `;
 }
 
-// Custom UI Widget & Robust Markdown Engine
+// Custom UI Widget & Robust Markdown Engine (With Protected Placeholder Stashing)
 function renderMarkdown(raw) {
   if (!raw) return '';
   let text = String(raw);
@@ -1283,39 +1333,34 @@ function renderMarkdown(raw) {
     }
   }
 
-  // 2. Parse Custom Widget: :::stats-grid
-  text = text.replace(/:::stats-grid\s*([\s\S]*?)\s*:::/gi, (match, body) => {
-    const cards = [];
-    const lines = body.trim().split('\n');
-    lines.forEach(l => {
-      const parts = l.split('|').map(s => s.trim());
-      if (parts.length >= 2) {
-        const label = escapeHtml(parts[0]);
-        const val = escapeHtml(parts[1]);
-        const meta = parts[2] ? escapeHtml(parts[2]) : '';
-        const color = parts[3] ? escapeHtml(parts[3]) : 'var(--color-accent)';
-        cards.push(`
-          <div class="custom-ui-metric-card">
-            <div class="metric-card-label">${label}</div>
-            <div class="metric-card-value" style="color: ${color};">${val}</div>
-            <div class="metric-card-bar"><div class="metric-bar-fill" style="width: 100%; background-color: ${color};"></div></div>
-            ${meta ? `<div class="metric-card-meta">${meta}</div>` : ''}
-          </div>
-        `);
-      }
-    });
-    return `\n\n<div class="custom-ui-metric-grid">${cards.join('')}</div>\n\n`;
-  });
-
-  // 3. Parse Custom Widget: :::file-tree
-  text = text.replace(/:::file-tree\s*([\s\S]*?)\s*:::/gi, (match, body) => {
-    return renderCustomFileTreeFromText(body);
-  });
-
-  // 4. Auto-detect lists of academic/directory files and transform into interactive file tree
+  // 2. Auto-detect lists of academic/directory files and transform into :::file-tree
   text = autoEnhanceFileListToTree(text);
 
-  // 5. Marked.js Markdown Parsing
+  // 3. Stashed Widgets Storage (protects HTML from marked.js)
+  const stashedWidgets = {};
+  let widgetCounter = 0;
+  function stashWidget(html) {
+    const token = `@@@OMNI_WIDGET_${widgetCounter++}@@@`;
+    stashedWidgets[token] = html.trim();
+    return `\n\n${token}\n\n`;
+  }
+
+  // Stash :::stats-grid widget
+  text = text.replace(/:::stats-grid\s*([\s\S]*?)\s*:::/gi, (match, body) => {
+    return stashWidget(renderCustomStatsGridFromText(body));
+  });
+
+  // Stash :::file-tree widget
+  text = text.replace(/:::file-tree\s*([\s\S]*?)\s*:::/gi, (match, body) => {
+    return stashWidget(renderCustomFileTreeFromText(body));
+  });
+
+  // Also stash any pre-existing custom-ui HTML blocks so marked never touches them
+  text = text.replace(/<div class="custom-ui-[\s\S]*?<\/div>\s*<\/div>/gi, (match) => {
+    return stashWidget(match);
+  });
+
+  // 4. Marked.js Markdown Parsing
   let html = '';
   if (typeof marked !== 'undefined' && marked.parse) {
     try {
@@ -1327,7 +1372,7 @@ function renderMarkdown(raw) {
     html = escapeHtml(text).replace(/\n/g, '<br>');
   }
 
-  // 6. Enhance code blocks with container, language header & copy button
+  // 5. Enhance real code blocks with container, language header & copy button
   html = html.replace(/<pre><code(?: class="language-([^"]*)")?>([\s\S]*?)<\/code><\/pre>/gi, (match, lang, codeContent) => {
     const l = lang ? lang.toUpperCase() : 'CODE';
     return `
@@ -1344,10 +1389,34 @@ function renderMarkdown(raw) {
     `;
   });
 
+  // 6. Restore stashed widgets (replaces tokens even if marked wrapped them in <p>)
+  for (const [token, widgetHtml] of Object.entries(stashedWidgets)) {
+    const pWrapped = new RegExp(`<p>\\s*${token}\\s*<\\/p>`, 'gi');
+    html = html.replace(pWrapped, widgetHtml);
+    html = html.replace(new RegExp(token, 'g'), widgetHtml);
+  }
+
   return html;
 }
 
-// Interactive File Tree Renderer
+// Compact Stats Grid Builder with Zero Indentation
+function renderCustomStatsGridFromText(body) {
+  const cards = [];
+  const lines = body.trim().split('\n');
+  lines.forEach(l => {
+    const parts = l.split('|').map(s => s.trim());
+    if (parts.length >= 2) {
+      const label = escapeHtml(parts[0]);
+      const val = escapeHtml(parts[1]);
+      const meta = parts[2] ? escapeHtml(parts[2]) : '';
+      const color = parts[3] ? escapeHtml(parts[3]) : 'var(--color-accent)';
+      cards.push(`<div class="custom-ui-metric-card"><div class="metric-card-label">${label}</div><div class="metric-card-value" style="color: ${color};">${val}</div><div class="metric-card-bar"><div class="metric-bar-fill" style="width: 100%; background-color: ${color};"></div></div>${meta ? `<div class="metric-card-meta">${meta}</div>` : ''}</div>`);
+    }
+  });
+  return `<div class="custom-ui-metric-grid">${cards.join('')}</div>`;
+}
+
+// Interactive File Tree Renderer (Zero Indentation HTML)
 function renderCustomFileTreeFromText(body) {
   const lines = body.trim().split('\n');
   const items = [];
@@ -1360,15 +1429,7 @@ function renderCustomFileTreeFromText(body) {
 
     if (s.startsWith('[DIR]')) {
       const dname = escapeHtml(s.slice(5).trim());
-      items.push(`
-        <div class="tree-folder-group">
-          <div class="tree-folder-title" style="margin-left: ${Math.min(indent * 4, 32)}px;" onclick="toggleTreeGroup(this)">
-            <svg class="tree-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transition: transform 0.15s ease;"><polyline points="9 18 15 12 9 6"/></svg>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
-            <span>${dname}</span>
-          </div>
-        </div>
-      `);
+      items.push(`<div class="tree-folder-group"><div class="tree-folder-title" style="margin-left: ${Math.min(indent * 4, 32)}px;" onclick="toggleTreeGroup(this)"><svg class="tree-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transition: transform 0.15s ease;"><polyline points="9 18 15 12 9 6"/></svg><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg><span>${dname}</span></div></div>`);
     } else {
       let finfo = s.startsWith('[FILE]') ? s.slice(6).trim() : s.replace(/^[-*]\s*/, '').trim();
       let parts = finfo.split('|');
@@ -1379,39 +1440,13 @@ function renderCustomFileTreeFromText(body) {
       let ext = fname.includes('.') ? fname.split('.').pop().toLowerCase() : 'file';
       let badgeClass = ['xlsx', 'pdf', 'docx', 'py', 'zip', 'txt'].includes(ext) ? ext : 'other';
 
-      items.push(`
-        <div class="tree-file-item" style="margin-left: ${Math.min((indent + 2) * 4, 36)}px;">
-          <span class="file-ext-badge ${badgeClass}">${escapeHtml(ext)}</span>
-          <span class="file-name" title="${escapeHtml(fname)}">${escapeHtml(fname)}</span>
-          ${fsize ? `<span class="file-size">${escapeHtml(fsize)}</span>` : ''}
-          <div class="file-actions">
-            <button type="button" class="btn-tree-action" onclick="copyFilePath('${escapeHtml(fname.replace(/'/g, "\\'"))}')" title="Salin nama/path berkas">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-            </button>
-            <button type="button" class="btn-tree-action" onclick="insertTokenIntoChat('@file:\\"${escapeHtml(fname.replace(/"/g, '\\"'))}\\" ')" title="Tandai target mention @file">
-              @file
-            </button>
-          </div>
-        </div>
-      `);
+      items.push(`<div class="tree-file-item" style="margin-left: ${Math.min((indent + 2) * 4, 36)}px;"><span class="file-ext-badge ${badgeClass}">${escapeHtml(ext)}</span><span class="file-name" title="${escapeHtml(fname)}">${escapeHtml(fname)}</span>${fsize ? `<span class="file-size">${escapeHtml(fsize)}</span>` : ''}<div class="file-actions"><button type="button" class="btn-tree-action" onclick="copyFilePath('${escapeHtml(fname.replace(/'/g, "\\'"))}')" title="Salin nama berkas"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button><button type="button" class="btn-tree-action" onclick="insertTokenIntoChat('@file:\\"${escapeHtml(fname.replace(/"/g, '\\"'))}\\" ')" title="Tandai target mention @file">@file</button></div></div>`);
     }
   });
 
-  return `
-    <div class="custom-ui-tree">
-      <div class="custom-ui-tree-header">
-        <div class="tree-header-title">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
-          <span>Struktur Direktori Berkas</span>
-        </div>
-        <span class="tree-count-badge">${fileCount} berkas ditampilkan</span>
-      </div>
-      <div class="custom-ui-tree-body">
-        ${items.join('')}
-      </div>
-    </div>
-  `;
+  return `<div class="custom-ui-tree"><div class="custom-ui-tree-header"><div class="tree-header-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg><span>Struktur Direktori Berkas</span></div><span class="tree-count-badge">${fileCount} berkas ditampilkan</span></div><div class="custom-ui-tree-body">${items.join('')}</div></div>`;
 }
+
 
 // Auto enhance file bullet lists to tree
 function autoEnhanceFileListToTree(text) {
@@ -1897,9 +1932,9 @@ function streamTextToElement(element, fullHtml, onComplete, scrollContainer) {
   };
   element.parentNode.insertBefore(skipBtn, element);
 
-  // Tokenize HTML so tags don't break during typing
+  // Smart Atomic Tokenizer: leaves custom UI widgets intact so DOM tags are never mangled
   const tokens = [];
-  const tagRegex = /<[^>]+>|[^<>\s]+|\s+/g;
+  const tagRegex = /(<div class="custom-ui-(?:metric-grid|tree)"[\s\S]*?<\/div>\s*<\/div>|<div class="code-block-container"[\s\S]*?<\/div>|<details class="agent-accordion"[\s\S]*?<\/details>|<[^>]+>|[^<>\s]+|\s+)/g;
   let m;
   while ((m = tagRegex.exec(fullHtml)) !== null) {
     tokens.push(m[0]);
@@ -1960,83 +1995,310 @@ function toggleTreeGroup(headerEl) {
   }
 }
 
+
 /* ============================================================ */
-/* CUSTOM MODEL & EXPANDED PROVIDER CONTROLLER                  */
+/* UNIFIED MODEL MANAGER: CRUD, DROPDOWN SYNC & PERSISTENCE    */
+/* (User freedom: Hapus model yang ada, Tambah baru, Modifikasi)*/
 /* ============================================================ */
-function refreshChatModelDropdown() {
-  const select = document.getElementById('aiModelSelect');
-  if (!select) return;
 
-  const currentVal = activeModel;
-  select.innerHTML = '';
+const PROVIDER_NAMES = {
+  gemini: "Google Gemini",
+  openrouter: "OpenRouter",
+  openai: "OpenAI",
+  groq: "Groq (Ultra-Fast)",
+  deepseek: "DeepSeek Official",
+  ollama: "Ollama (Lokal)",
+  custom: "Custom OpenAI-API",
+  local: "Agen Mandiri (PowerShell)"
+};
 
-  // 1. Active Provider Models
-  const meta = PROVIDER_METADATA[activeProvider] || PROVIDER_METADATA.gemini;
-  const grpActive = document.createElement('optgroup');
-  grpActive.label = `Provider Aktif (${meta.name})`;
-  meta.models.forEach(m => {
-    const opt = document.createElement('option');
-    opt.value = m.id;
-    opt.textContent = m.label;
-    grpActive.appendChild(opt);
-  });
-  select.appendChild(grpActive);
+function populateModelSelects() {
+  const selects = [
+    document.getElementById('aiModelSelect'),
+    document.getElementById('settingsModelSelect')
+  ];
 
-  // 2. Saved Custom Models
-  if (savedCustomModels && savedCustomModels.length > 0) {
-    const grpCustom = document.createElement('optgroup');
-    grpCustom.label = 'Model Kustom Pengguna';
-    savedCustomModels.forEach(cm => {
-      const opt = document.createElement('option');
-      opt.value = cm;
-      opt.textContent = cm;
-      grpCustom.appendChild(opt);
+  selects.forEach(sel => {
+    if (!sel) return;
+    const curVal = activeModel;
+    sel.innerHTML = '';
+
+    // Group models by provider
+    const groups = {};
+    userModelsRegistry.forEach(m => {
+      const p = m.provider || 'gemini';
+      if (!groups[p]) groups[p] = [];
+      groups[p].push(m);
     });
-    select.appendChild(grpCustom);
-  }
 
-  // 3. Other Popular Providers
-  const grpOther = document.createElement('optgroup');
-  grpOther.label = 'Model Populer Lainnya';
-  grpOther.innerHTML = `
-    <option value="openrouter/anthropic/claude-3.5-sonnet">OpenRouter: Claude 3.5 Sonnet</option>
-    <option value="openrouter/deepseek/deepseek-r1">OpenRouter: DeepSeek R1</option>
-    <option value="groq/llama-3.3-70b-versatile">Groq: Llama 3.3 70B Versatile</option>
-    <option value="deepseek/deepseek-chat">DeepSeek: DeepSeek-V3</option>
-    <option value="openai/gpt-4o-mini">OpenAI: GPT-4o Mini</option>
-    <option value="local-heuristic">Agen Mandiri Offline (PowerShell)</option>
-  `;
-  select.appendChild(grpOther);
+    for (const [prov, models] of Object.entries(groups)) {
+      const grp = document.createElement('optgroup');
+      grp.label = PROVIDER_NAMES[prov] || prov.toUpperCase();
+      models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = m.label || m.id;
+        grp.appendChild(opt);
+      });
+      sel.appendChild(grp);
+    }
 
-  // 4. Action Option: Add custom model
-  const optAdd = document.createElement('option');
-  optAdd.value = '__ADD_CUSTOM__';
-  optAdd.textContent = '+ Tambah Model Kustom...';
-  select.appendChild(optAdd);
+    // Add action option
+    const optManage = document.createElement('option');
+    optManage.value = '__OPEN_MANAGER__';
+    optManage.textContent = '⚙ Kelola / Hapus / Tambah Model...';
+    sel.appendChild(optManage);
 
-  // Restore selection
-  if (currentVal && select.querySelector(`option[value="${currentVal}"]`)) {
-    select.value = currentVal;
-  } else if (meta.defaultModel) {
-    select.value = meta.defaultModel;
-    activeModel = meta.defaultModel;
-  }
+    // Set value
+    if (curVal && userModelsRegistry.some(m => m.id === curVal)) {
+      sel.value = curVal;
+    } else if (userModelsRegistry.length > 0) {
+      sel.value = userModelsRegistry[0].id;
+      activeModel = userModelsRegistry[0].id;
+    }
+  });
+}
+
+function refreshChatModelDropdown() {
+  populateModelSelects();
 }
 
 function handleAiModelSelectChange(val) {
-  if (val === '__ADD_CUSTOM__') {
-    switchNav('settings');
-    const input = document.getElementById('customModelInput');
-    if (input) {
-      input.focus();
-      input.scrollIntoView({ behavior: 'smooth' });
-    }
-    showToast("Ketik nama model kustom yang ingin ditambahkan.");
-    refreshChatModelDropdown();
+  if (val === '__OPEN_MANAGER__') {
+    openModelManagerModal();
+    populateModelSelects();
     return;
   }
   activeModel = val;
-  showToast(`Model aktif: ${val}`);
+  const found = userModelsRegistry.find(m => m.id === val);
+  if (found) {
+    showToast(`Model aktif: ${found.label}`);
+  }
+  renderModelsManagementTable();
+}
+
+function handleModelSelectChange(val) {
+  handleAiModelSelectChange(val);
+}
+
+function renderModelsManagementTable(filterQuery = '') {
+  const modalTbody = document.getElementById('modalModelsTableBody');
+  const settingsTbody = document.getElementById('settingsModelsTableBody');
+  const countBadge = document.getElementById('modalModelCountBadge');
+
+  if (countBadge) {
+    countBadge.textContent = `${userModelsRegistry.length} model`;
+  }
+
+  const q = (filterQuery || '').toLowerCase().trim();
+  const filtered = userModelsRegistry.filter(m => {
+    if (!q) return true;
+    return (m.id && m.id.toLowerCase().includes(q)) ||
+           (m.label && m.label.toLowerCase().includes(q)) ||
+           (m.provider && m.provider.toLowerCase().includes(q));
+  });
+
+  const renderRows = () => {
+    if (filtered.length === 0) {
+      return `<tr><td colspan="5" style="text-align: center; color: var(--color-muted); padding: 16px;">Tidak ada model yang cocok.</td></tr>`;
+    }
+    return filtered.map(m => {
+      const isActive = m.id === activeModel;
+      const provClass = m.provider || 'gemini';
+      const provLabel = PROVIDER_NAMES[m.provider] || m.provider;
+      const safeId = escapeHtml(m.id).replace(/'/g, "\\'");
+      return `
+        <tr style="${isActive ? 'background: #f0fdf4;' : ''}">
+          <td>
+            <span class="badge-prov-chip ${escapeHtml(provClass)}">${escapeHtml(provLabel)}</span>
+          </td>
+          <td style="font-weight: 500;">
+            ${escapeHtml(m.label || m.id)}
+          </td>
+          <td>
+            <code style="font-family: var(--font-mono); font-size: 11px; color: var(--color-secondary);">${escapeHtml(m.id)}</code>
+          </td>
+          <td style="text-align: center;">
+            ${isActive ? '<span class="status-pill success" style="font-size: 10px; padding: 1px 6px;">Aktif</span>' : '<button type="button" class="btn-clean" style="height: 20px; font-size: 10px; padding: 0 5px;" onclick="setActiveModelFromTable(\'' + safeId + '\')">Pilih</button>'}
+          </td>
+          <td style="text-align: right;">
+            <div style="display: inline-flex; gap: 4px; justify-content: flex-end;">
+              <button type="button" class="btn-action-icon" onclick="startEditModel('${safeId}')" title="Ubah nama atau ID model">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                <span>Edit</span>
+              </button>
+              <button type="button" class="btn-action-icon danger" onclick="deleteModel('${safeId}')" title="Hapus model dari daftar & dropdown">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                <span>Hapus</span>
+              </button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  };
+
+  const rowsHtml = renderRows();
+  if (modalTbody) modalTbody.innerHTML = rowsHtml;
+  if (settingsTbody) settingsTbody.innerHTML = rowsHtml;
+}
+
+function setActiveModelFromTable(modelId) {
+  activeModel = modelId;
+  const found = userModelsRegistry.find(m => m.id === modelId);
+  showToast(`Model aktif: ${found ? found.label : modelId}`);
+  populateModelSelects();
+  renderModelsManagementTable();
+}
+
+function openModelManagerModal(modelToEdit = null, mode = 'view') {
+  const modal = document.getElementById('modelManagerModal');
+  if (modal) modal.style.display = 'flex';
+  if (modelToEdit) {
+    startEditModel(modelToEdit);
+  } else {
+    cancelModelEdit();
+  }
+  renderModelsManagementTable();
+  const searchInput = document.getElementById('modalModelSearchInput');
+  if (searchInput) searchInput.value = '';
+}
+
+function closeModelManagerModal() {
+  const modal = document.getElementById('modelManagerModal');
+  if (modal) modal.style.display = 'none';
+  cancelModelEdit();
+}
+
+function startEditModel(modelId) {
+  const m = userModelsRegistry.find(x => x.id === modelId);
+  if (!m) return;
+  editingModelId = modelId;
+
+  const modal = document.getElementById('modelManagerModal');
+  if (modal && modal.style.display !== 'flex') {
+    modal.style.display = 'flex';
+  }
+
+  const provInput = document.getElementById('modalFormProv');
+  const idInput = document.getElementById('modalFormId');
+  const labelInput = document.getElementById('modalFormLabel');
+  const title = document.getElementById('modalModelFormTitle');
+  const btnCancel = document.getElementById('btnCancelEditModel');
+  const btnSaveLabel = document.getElementById('btnSaveModelLabel');
+
+  if (provInput) provInput.value = m.provider || 'gemini';
+  if (idInput) idInput.value = m.id;
+  if (labelInput) labelInput.value = m.label || m.id;
+  if (title) title.textContent = `Ubah Model: ${m.label || m.id}`;
+  if (btnCancel) btnCancel.style.display = 'inline-block';
+  if (btnSaveLabel) btnSaveLabel.textContent = 'Simpan Perubahan';
+
+  const card = document.getElementById('modalModelFormCard');
+  if (card) {
+    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    card.style.borderColor = 'var(--color-primary)';
+  }
+}
+
+function cancelModelEdit() {
+  editingModelId = null;
+  const idInput = document.getElementById('modalFormId');
+  const labelInput = document.getElementById('modalFormLabel');
+  const title = document.getElementById('modalModelFormTitle');
+  const btnCancel = document.getElementById('btnCancelEditModel');
+  const btnSaveLabel = document.getElementById('btnSaveModelLabel');
+
+  if (idInput) idInput.value = '';
+  if (labelInput) labelInput.value = '';
+  if (title) title.textContent = '+ Tambah Model Baru';
+  if (btnCancel) btnCancel.style.display = 'none';
+  if (btnSaveLabel) btnSaveLabel.textContent = 'Simpan Model';
+
+  const card = document.getElementById('modalModelFormCard');
+  if (card) card.style.borderColor = 'var(--color-border)';
+}
+
+async function submitModelForm() {
+  const provInput = document.getElementById('modalFormProv');
+  const idInput = document.getElementById('modalFormId');
+  const labelInput = document.getElementById('modalFormLabel');
+
+  const prov = provInput ? provInput.value : 'gemini';
+  const id = idInput ? idInput.value.trim() : '';
+  const label = labelInput && labelInput.value.trim() ? labelInput.value.trim() : id;
+
+  if (!id) {
+    showToast("ID Model teknis tidak boleh kosong!");
+    if (idInput) idInput.focus();
+    return;
+  }
+
+  if (editingModelId) {
+    // Updating existing model
+    const idx = userModelsRegistry.findIndex(m => m.id === editingModelId);
+    if (idx !== -1) {
+      userModelsRegistry[idx] = { id, label, provider: prov };
+      if (activeModel === editingModelId) {
+        activeModel = id;
+      }
+      showToast(`Model '${label}' berhasil diperbarui!`);
+    }
+  } else {
+    // Adding new model
+    const exists = userModelsRegistry.some(m => m.id === id);
+    if (exists) {
+      showToast(`Model dengan ID '${id}' sudah ada di daftar.`);
+      return;
+    }
+    userModelsRegistry.unshift({ id, label, provider: prov });
+    activeModel = id;
+    showToast(`Model '${label}' berhasil ditambahkan ke dropdown!`);
+  }
+
+  cancelModelEdit();
+  await saveModelsRegistry(userModelsRegistry);
+}
+
+async function deleteModel(modelId) {
+  const m = userModelsRegistry.find(x => x.id === modelId);
+  const name = m ? m.label || m.id : modelId;
+
+  if (!confirm(`Hapus model '${name}' dari daftar & dropdown?`)) {
+    return;
+  }
+
+  userModelsRegistry = userModelsRegistry.filter(x => x.id !== modelId);
+  if (activeModel === modelId) {
+    activeModel = userModelsRegistry[0]?.id || 'local-heuristic';
+  }
+
+  showToast(`Model '${name}' telah dihapus.`);
+  await saveModelsRegistry(userModelsRegistry);
+}
+
+function resetModelsToDefaultsPrompt() {
+  if (confirm("Kembalikan semua daftar model ke preset bawaan sistem? Semua model yang telah dihapus atau ditambahkan akan diatur ulang.")) {
+    userModelsRegistry = JSON.parse(JSON.stringify(DEFAULT_MODELS_REGISTRY));
+    activeModel = "gemini-3.5-flash-lite";
+    saveModelsRegistry(userModelsRegistry);
+    showToast("Model berhasil di-reset ke preset bawaan.");
+  }
+}
+
+async function saveModelsRegistry(models) {
+  try {
+    localStorage.setItem('omnifile_models_registry', JSON.stringify(models));
+    await fetch('/api/models', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ models })
+    });
+  } catch (err) {
+    console.warn("Error saving models to server:", err);
+  }
+  populateModelSelects();
+  renderModelsManagementTable();
 }
 
 function addCustomModelToFavorites() {
@@ -2046,65 +2308,13 @@ function addCustomModelToFavorites() {
     showToast("Ketik nama model terlebih dahulu.");
     return;
   }
-
-  if (!savedCustomModels.includes(val)) {
-    savedCustomModels.push(val);
-    renderCustomModelsChips();
-    refreshChatModelDropdown();
-    showToast(`Model '${val}' disimpan ke daftar.`);
-    saveSettingsToServer();
-  }
+  userModelsRegistry.unshift({
+    id: val,
+    label: val,
+    provider: activeProvider
+  });
+  activeModel = val;
+  saveModelsRegistry(userModelsRegistry);
+  showToast(`Model '${val}' ditambahkan ke dropdown.`);
   input.value = '';
-}
-
-function removeCustomModel(modelId) {
-  savedCustomModels = savedCustomModels.filter(m => m !== modelId);
-  renderCustomModelsChips();
-  refreshChatModelDropdown();
-  showToast(`Model '${modelId}' dihapus.`);
-  saveSettingsToServer();
-}
-
-function renderCustomModelsChips() {
-  const container = document.getElementById('savedCustomModelsContainer');
-  if (!container) return;
-
-  if (savedCustomModels.length === 0) {
-    container.innerHTML = '<span style="font-size: 10.5px; color: var(--color-muted);">Belum ada model kustom tersimpan.</span>';
-    return;
-  }
-
-  container.innerHTML = savedCustomModels.map(m => `
-    <span class="mention-card" style="background: #f1f5f9; color: #1e293b; border: 1px solid #cbd5e1; gap: 4px; padding: 2px 6px;">
-      <span>${escapeHtml(m)}</span>
-      <button type="button" onclick="removeCustomModel('${escapeHtml(m.replace(/'/g, "\\'"))}')" style="background:none; border:none; cursor:pointer; color: #94a3b8; font-size: 11px; padding: 0 2px;">&times;</button>
-    </span>
-  `).join('');
-}
-
-function saveSettingsToServer() {
-  saveSettings();
-}
-
-async function fetchOllamaModels() {
-  const btn = document.getElementById('btnFetchOllamaModels');
-  const endpoint = document.getElementById('settingsEndpointInput')?.value || "http://localhost:11434";
-  if (btn) btn.innerHTML = '<i data-lucide="loader" style="animation: spin 1s infinite linear;"></i> Memeriksa...';
-
-  try {
-    const res = await fetch(`/api/models/ollama?endpoint=${encodeURIComponent(endpoint)}`);
-    const data = await res.json();
-    if (data.success && data.models && data.models.length > 0) {
-      PROVIDER_METADATA.ollama.models = data.models.map(m => ({ id: m, label: `Ollama: ${m}` }));
-      selectProviderCard('ollama', false);
-      showToast(`Berhasil menarik ${data.models.length} model dari Ollama!`);
-    } else {
-      showToast(`Gagal: ${data.error || 'Tidak ada model ditemukan di server Ollama.'}`);
-    }
-  } catch (err) {
-    showToast(`Error menghubungi Ollama: ${err.message}`);
-  } finally {
-    if (btn) btn.innerHTML = '<i data-lucide="download-cloud"></i> Tarik Model Ollama';
-    initLucide();
-  }
 }

@@ -290,6 +290,7 @@ class ChatRequest(BaseModel):
     current_path: str = "D:\\"
     mentioned_items: Optional[List[str]] = []
     model_override: Optional[str] = None
+    provider_override: Optional[str] = None
 
 @app.post("/api/ai/chat")
 def api_chat(req: ChatRequest):
@@ -297,7 +298,8 @@ def api_chat(req: ChatRequest):
         user_prompt=req.message,
         current_path=req.current_path,
         mentioned_items=req.mentioned_items,
-        model_override=req.model_override
+        model_override=req.model_override,
+        provider_override=req.provider_override
     )
     return res
 
@@ -314,6 +316,7 @@ class SettingsUpdateRequest(BaseModel):
     project_base: Optional[str] = "D:\\PROJECT"
     game_base: Optional[str] = "D:\\Game"
     custom_models: Optional[List[str]] = []
+    models_registry: Optional[List[dict]] = None
 
 class TestKeyRequest(BaseModel):
     provider: str
@@ -334,6 +337,7 @@ def update_settings(req: SettingsUpdateRequest):
     if req.project_base: ai_engine.config['project_base'] = req.project_base
     if req.game_base: ai_engine.config['game_base'] = req.game_base
     if req.custom_models is not None: ai_engine.config['custom_models'] = req.custom_models
+    if req.models_registry is not None: ai_engine.config['models_registry'] = req.models_registry
 
     with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
         json.dump(ai_engine.config, f, indent=2)
@@ -419,6 +423,24 @@ def test_provider_key(req: TestKeyRequest):
             return {"success": True, "message": f"Provider {prov} lokal aktif & siap digunakan."}
     except Exception as e:
         return {"success": False, "message": f"Gagal menghubungi server API: {str(e)}"}
+
+
+class ModelsRegistryRequest(BaseModel):
+    models: List[dict]
+
+@app.get("/api/models")
+def get_registered_models():
+    """Returns the list of user registered models from config.json."""
+    return {"models": ai_engine.config.get('models_registry', [])}
+
+@app.post("/api/models")
+def save_registered_models(req: ModelsRegistryRequest):
+    """Saves user models registry (add, edit, delete)."""
+    ai_engine.config['models_registry'] = req.models
+    with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
+        json.dump(ai_engine.config, f, indent=2)
+    ai_engine.reload_config()
+    return {"success": True, "models": req.models}
 
 @app.get("/api/models/ollama")
 def get_ollama_models(endpoint: Optional[str] = "http://localhost:11434"):

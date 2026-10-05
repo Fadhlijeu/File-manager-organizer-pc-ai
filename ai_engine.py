@@ -55,8 +55,8 @@ class AIEngine:
             'has_key': bool(prov.get('api_key'))
         }
 
-    def call_llm(self, prompt, system_instruction='', model_override=None, temperature=0.2, max_tokens=1500):
-        prov_key = self.active_provider
+    def call_llm(self, prompt, system_instruction='', model_override=None, temperature=0.2, max_tokens=1500, provider_override=None):
+        prov_key = provider_override.lower().strip() if provider_override else self.active_provider
         prov = self.providers.get(prov_key, {})
         model = prov.get('model', 'gemini-3.5-flash-lite')
         api_key = prov.get('api_key', '')

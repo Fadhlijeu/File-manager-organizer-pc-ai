@@ -320,7 +320,7 @@ class AutonomousAgent:
         self.ai_engine = ai_engine
         self.toolbox = AgentToolbox()
 
-    def run(self, user_prompt: str, current_path: str = "D:\\", mentioned_items: List[str] = None, model_override: str = None) -> Dict[str, Any]:
+    def run(self, user_prompt: str, current_path: str = "D:\\", mentioned_items: List[str] = None, model_override: str = None, provider_override: str = None) -> Dict[str, Any]:
         mentioned_items = mentioned_items or []
         events = []
         actions_taken = []
@@ -346,7 +346,7 @@ class AutonomousAgent:
                 resolved_mentions.append(res)
         
         # Check if model is local heuristic or cloud
-        prov_key = self.ai_engine.active_provider
+        prov_key = provider_override or self.ai_engine.active_provider
         prov = self.ai_engine.providers.get(prov_key, {})
         has_key = bool(prov.get('api_key'))
         if model_override:
@@ -360,7 +360,7 @@ class AutonomousAgent:
             return res
 
         # Cloud ReAct Multi-Turn Loop
-        res = self._run_cloud_react_loop(user_prompt, current_path, mentioned_items, resolved_mentions, model_override)
+        res = self._run_cloud_react_loop(user_prompt, current_path, mentioned_items, resolved_mentions, model_override, provider_override=prov_key)
         res['reply'] = strip_emojis(res.get('reply', ''))
         return res
 
@@ -427,7 +427,7 @@ class AutonomousAgent:
         except Exception as e:
             return f"Error executing tool {action_name}: {str(e)}"
 
-    def _run_cloud_react_loop(self, user_prompt: str, current_path: str, mentioned_items: List[str], resolved_mentions: List[dict] = None, model_override: str = None) -> Dict[str, Any]:
+    def _run_cloud_react_loop(self, user_prompt: str, current_path: str, mentioned_items: List[str], resolved_mentions: List[dict] = None, model_override: str = None, provider_override: str = None) -> Dict[str, Any]:
         events = []
         actions_taken = []
         max_turns = 8
@@ -516,7 +516,7 @@ Semester 3KA31 | 22 | 17.3% materi perkuliahan | #d97706
             if conversation_history:
                 full_prompt += "\n\nRiwayat Interaksi Sebelumnya:\n" + "\n".join(conversation_history)
             
-            raw_response = self.ai_engine.call_llm(full_prompt, system_instruction=system_instruction, model_override=model_override)
+            raw_response = self.ai_engine.call_llm(full_prompt, system_instruction=system_instruction, model_override=model_override, provider_override=provider_override)
             if not raw_response or raw_response == 'LOCAL_HEURISTIC_MODE':
                 # Graceful switch to local heuristic
                 res = self._run_local_autonomous_agent(user_prompt, current_path, mentioned_items, resolved_mentions)
