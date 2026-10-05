@@ -2,6 +2,7 @@
 import os
 import json
 import asyncio
+import threading
 import requests
 from typing import Optional, List
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, HTTPException
@@ -78,16 +79,25 @@ def on_queue_event(event_type, item):
 
 queue_mgr.add_listener(on_queue_event)
 
+def _deferred_initial_scan():
+    """Background scan that starts 2s after server is ready - keeps startup instant."""
+    import time as _time
+    _time.sleep(2.0)
+    for p in watch_paths:
+        try:
+            if os.path.exists(p):
+                for f in os.listdir(p):
+                    fp = os.path.join(p, f)
+                    if os.path.isfile(fp) and not f.startswith('.'):
+                        queue_mgr.add_to_queue(fp)
+        except Exception as e:
+            print(f'[Startup Scan] Error scanning {p}: {e}')
+
 @app.on_event("startup")
 def startup_event():
     watcher.start()
-    # Initial quick scan of staging paths for queue
-    for p in watch_paths:
-        if os.path.exists(p):
-            for f in os.listdir(p):
-                fp = os.path.join(p, f)
-                if os.path.isfile(fp) and not f.startswith('.'):
-                    queue_mgr.add_to_queue(fp)
+    # Server responds instantly; scan happens in background after 2s
+    threading.Thread(target=_deferred_initial_scan, daemon=True).start()
 
 @app.on_event("shutdown")
 def shutdown_event():
