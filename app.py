@@ -313,6 +313,7 @@ class SettingsUpdateRequest(BaseModel):
     personal_base: Optional[str] = "D:\\fadhl"
     project_base: Optional[str] = "D:\\PROJECT"
     game_base: Optional[str] = "D:\\Game"
+    custom_models: Optional[List[str]] = []
 
 class TestKeyRequest(BaseModel):
     provider: str
@@ -332,6 +333,7 @@ def update_settings(req: SettingsUpdateRequest):
     if req.personal_base: ai_engine.config['personal_base'] = req.personal_base
     if req.project_base: ai_engine.config['project_base'] = req.project_base
     if req.game_base: ai_engine.config['game_base'] = req.game_base
+    if req.custom_models is not None: ai_engine.config['custom_models'] = req.custom_models
 
     with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
         json.dump(ai_engine.config, f, indent=2)
@@ -354,7 +356,7 @@ def update_settings(req: SettingsUpdateRequest):
 def test_provider_key(req: TestKeyRequest):
     prov = req.provider.lower().strip()
     key = req.api_key.strip()
-    if not key and prov != 'local':
+    if not key and prov not in ['local', 'ollama']:
         return {"success": False, "message": "Kunci API tidak boleh kosong."}
 
     try:
@@ -364,7 +366,7 @@ def test_provider_key(req: TestKeyRequest):
             if r.status_code == 200:
                 data = r.json()
                 models_count = len(data.get('models', []))
-                return {"success": True, "message": f"Koneksi Google Gemini API Valid ({models_count} model tersedia)!"}
+                return {"success": True, "message": f"Koneksi Google Gemini API Valid ({models_count} model terdeteksi)!"}
             else:
                 return {"success": False, "message": f"Gemini API Error ({r.status_code}): {r.text[:160]}"}
         elif prov == 'openrouter':
@@ -384,13 +386,51 @@ def test_provider_key(req: TestKeyRequest):
             headers = {"Authorization": f"Bearer {key}"}
             r = requests.get(url, headers=headers, timeout=7)
             if r.status_code == 200:
-                return {"success": True, "message": "Koneksi OpenAI API Berhasil & Valid!"}
+                return {"success": True, "message": "Koneksi OpenAI API Berhasil & Kunci Valid!"}
             else:
                 return {"success": False, "message": f"OpenAI Error ({r.status_code}): {r.text[:160]}"}
+        elif prov == 'groq':
+            url = "https://api.groq.com/openai/v1/models"
+            headers = {"Authorization": f"Bearer {key}"}
+            r = requests.get(url, headers=headers, timeout=7)
+            if r.status_code == 200:
+                return {"success": True, "message": "Koneksi Groq API Berhasil (Super Fast Inference Siap)!"}
+            else:
+                return {"success": False, "message": f"Groq Error ({r.status_code}): {r.text[:160]}"}
+        elif prov == 'deepseek':
+            url = "https://api.deepseek.com/models"
+            headers = {"Authorization": f"Bearer {key}"}
+            r = requests.get(url, headers=headers, timeout=7)
+            if r.status_code == 200:
+                return {"success": True, "message": "Koneksi DeepSeek API Berhasil & Model Tersedia!"}
+            else:
+                return {"success": False, "message": f"DeepSeek Error ({r.status_code}): {r.text[:160]}"}
+        elif prov == 'ollama':
+            url = "http://localhost:11434/api/tags"
+            r = requests.get(url, timeout=5)
+            if r.status_code == 200:
+                models = [m.get('name') for m in r.json().get('models', [])]
+                return {"success": True, "message": f"Ollama Local Server Aktif! Model terpasang: {', '.join(models[:4]) or 'Belum ada model'}"}
+            else:
+                return {"success": False, "message": f"Ollama Server merespons code {r.status_code}."}
+        elif prov == 'custom':
+            return {"success": True, "message": "Endpoint Custom disimpan. Siap digunakan via OpenAI API contract."}
         else:
             return {"success": True, "message": f"Provider {prov} lokal aktif & siap digunakan."}
     except Exception as e:
         return {"success": False, "message": f"Gagal menghubungi server API: {str(e)}"}
+
+@app.get("/api/models/ollama")
+def get_ollama_models(endpoint: Optional[str] = "http://localhost:11434"):
+    try:
+        url = f"{endpoint.rstrip('/')}/api/tags"
+        r = requests.get(url, timeout=4)
+        if r.status_code == 200:
+            models = [m.get('name') for m in r.json().get('models', [])]
+            return {"success": True, "models": models}
+        return {"success": False, "models": [], "error": f"Status {r.status_code}"}
+    except Exception as e:
+        return {"success": False, "models": [], "error": str(e)}
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

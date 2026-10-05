@@ -479,11 +479,31 @@ Pada SETIAP giliran (turn), Anda HARUS merespons HANYA dalam format JSON murni b
   "args": {{ ... parameter sesuai tool di atas ... }}
 }}
 
-ATURAN PENTING:
+ATURAN PENTING & FORMAT JAWABAN AKHIR (UI WIDGETS):
 - JANGAN PERNAH berasumsi Anda tidak tahu isi file atau folder. Selalu jalankan `powershell_exec` atau `list_directory` untuk memeriksanya!
 - Jika pengguna bertanya 'ada berapa total file perkuliahan', segera jalankan powershell_exec untuk menghitung total dan rincian semester!
 - Jika pengguna meminta 'rapihkan folder ...', amati isi foldernya, baca dokumen jika perlu, pindahkan berkas ke tempat yang tepat, lalu laporkan hasilnya.
-- Jawaban final (`final_answer`) HARUS berupa Markdown yang rapi, informatif, menyajikan data angka konkret dan path absolut.
+
+WIDGET UI BUATAN (Gunakan untuk tampilan yang memukau dan interaktif):
+1. Jika menyajikan statistik / rekapitulasi jumlah berkas, gunakan blok widget :::stats-grid:
+:::stats-grid
+Total Berkas Perkuliahan | 127 | D:\\Kuliah terverifikasi | #1f2937
+Semester 2KA31 | 105 | 82.7% materi perkuliahan | #2563eb
+Semester 3KA31 | 22 | 17.3% materi perkuliahan | #d97706
+:::
+
+2. Jika menyajikan daftar direktori / hierarki berkas atau folder mata kuliah, gunakan blok widget :::file-tree:
+:::file-tree
+[DIR] 3KA31
+  [DIR] Administrasi & Jadwal
+    [FILE] ABSENSI 3KA31.xlsx | 14 KB
+    [FILE] 10124832_91.pdf | 2.1 MB
+  [DIR] AK011211 - Pemrograman Berbasis WEB
+  [DIR] AK011229 - Metode Penelitian
+    [FILE] Tugas_Plagiarisme_Muhammad_Fadhli_Rizaldy.docx | 45 KB
+:::
+
+- Jawaban final (`final_answer`) HARUS berupa Markdown informatif yang rapi, menyajikan angka konkret, path absolut Windows, dan widget di atas.
 - KRITIS - DELETE SAFETY: Jika user meminta hapus file, JANGAN langsung eksekusi safe_delete atau Remove-Item di PowerShell. Wajib gunakan `finish` terlebih dahulu dengan final_answer yang meminta konfirmasi dari user: "Apakah Anda yakin ingin menghapus [nama file]? Balas 'ya hapus' untuk mengkonfirmasi."
 - Setelah user membalas dengan konfirmasi eksplisit ('ya', 'ya hapus', dll), barulah eksekusi penghapusan dengan menambahkan confirmed=True dalam args safe_delete."""
 
@@ -496,26 +516,68 @@ ATURAN PENTING:
             if conversation_history:
                 full_prompt += "\n\nRiwayat Interaksi Sebelumnya:\n" + "\n".join(conversation_history)
             
-            raw_response = self.ai_engine.call_llm(full_prompt, system_instruction=system_instruction)
+            raw_response = self.ai_engine.call_llm(full_prompt, system_instruction=system_instruction, model_override=model_override)
             if not raw_response or raw_response == 'LOCAL_HEURISTIC_MODE':
                 # Graceful switch to local heuristic
                 res = self._run_local_autonomous_agent(user_prompt, current_path, mentioned_items, resolved_mentions)
                 res['reply'] = strip_emojis(res.get('reply', ''))
                 return res
 
-            # Parse JSON
-            parsed = None
-            try:
-                clean_json = raw_response.strip()
-                if '```json' in clean_json:
-                    clean_json = clean_json.split('```json')[1].split('```')[0].strip()
-                elif '```' in clean_json:
-                    clean_json = clean_json.split('```')[1].split('```')[0].strip()
-                parsed = json.loads(clean_json)
-            except Exception:
-                # If not valid JSON, treat as final text response
+            # Robust JSON parser with Windows path repair and regex extraction
+            def robust_json_extract(text):
+                clean = text.strip()
+                if '```json' in clean:
+                    clean = clean.split('```json')[1].split('```')[0].strip()
+                elif '```' in clean:
+                    clean = clean.split('```')[1].split('```')[0].strip()
+                
+                try:
+                    return json.loads(clean)
+                except Exception:
+                    pass
+
+                # Repair unescaped backslashes in Windows paths (e.g. D:\Kuliah\3KA31)
+                repaired = re.sub(r'(?<!\\)\\(?![\\nrtbfv"u/])', r'\\\\', clean)
+                try:
+                    return json.loads(repaired)
+                except Exception:
+                    pass
+
+                # Fallback: extract final_answer using regex
+                fa_match = re.search(r'"final_answer"\s*:\s*"((?:[^"\\]|\\.)*)"', clean, re.DOTALL)
+                if fa_match:
+                    try:
+                        val = json.loads(f'"{fa_match.group(1)}"')
+                        return {"action": "finish", "args": {"final_answer": val}}
+                    except Exception:
+                        return {"action": "finish", "args": {"final_answer": fa_match.group(1)}}
+
+                # Fallback: extract thought
+                th_match = re.search(r'"thought"\s*:\s*"((?:[^"\\]|\\.)*)"', clean, re.DOTALL)
+                if th_match:
+                    return {"action": "finish", "args": {"final_answer": th_match.group(1)}}
+
+                # If JSON object pattern exists, strip leading/trailing non-json
+                obj_match = re.search(r'\{.*\}', clean, re.DOTALL)
+                if obj_match:
+                    try:
+                        repaired_obj = re.sub(r'(?<!\\)\\(?![\\nrtbfv"u/])', r'\\\\', obj_match.group(0))
+                        return json.loads(repaired_obj)
+                    except Exception:
+                        pass
+
+                return None
+
+            parsed = robust_json_extract(raw_response)
+            if not parsed:
+                # If truly not a JSON action, ensure it doesn't contain raw finish structure
+                reply_text = raw_response
+                if '"final_answer"' in reply_text:
+                    fa_match = re.search(r'"final_answer"\s*:\s*"((?:[^"\\]|\\.)*)"', reply_text, re.DOTALL)
+                    if fa_match:
+                        reply_text = fa_match.group(1)
                 return {
-                    'reply': raw_response,
+                    'reply': reply_text,
                     'events': events,
                     'actions_taken': actions_taken
                 }

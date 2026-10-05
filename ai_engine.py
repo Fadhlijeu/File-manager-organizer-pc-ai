@@ -55,11 +55,44 @@ class AIEngine:
             'has_key': bool(prov.get('api_key'))
         }
 
-    def call_llm(self, prompt, system_instruction=''):
+    def call_llm(self, prompt, system_instruction='', model_override=None, temperature=0.2, max_tokens=1500):
         prov_key = self.active_provider
         prov = self.providers.get(prov_key, {})
-        api_key = prov.get('api_key', '')
         model = prov.get('model', 'gemini-3.5-flash-lite')
+        api_key = prov.get('api_key', '')
+
+        # Handle model_override with optional provider prefix (e.g. "openrouter/claude-3.5-sonnet", "groq/llama-3.3-70b-versatile")
+        if model_override:
+            mo_clean = model_override.strip()
+            if mo_clean.lower() == 'local-heuristic' or 'local' in mo_clean.lower():
+                return self._local_fallback_response(prompt)
+            
+            for p_prefix in ['openrouter/', 'openai/', 'gemini/', 'groq/', 'deepseek/', 'ollama/', 'custom/']:
+                if mo_clean.lower().startswith(p_prefix):
+                    prov_key = p_prefix.rstrip('/')
+                    prov = self.providers.get(prov_key, {})
+                    model = mo_clean[len(p_prefix):]
+                    api_key = prov.get('api_key', api_key)
+                    break
+            else:
+                # If model_override is a plain model ID, check which provider owns it or use active
+                if 'gemini' in mo_clean.lower():
+                    prov_key = 'gemini'
+                    prov = self.providers.get('gemini', {})
+                    api_key = prov.get('api_key', api_key)
+                    model = mo_clean
+                elif 'gpt' in mo_clean.lower() or 'o3' in mo_clean.lower() or 'o1' in mo_clean.lower():
+                    prov_key = 'openai'
+                    prov = self.providers.get('openai', {})
+                    api_key = prov.get('api_key', api_key)
+                    model = mo_clean
+                elif 'claude' in mo_clean.lower() or 'llama' in mo_clean.lower() and '/' in mo_clean:
+                    prov_key = 'openrouter'
+                    prov = self.providers.get('openrouter', {})
+                    api_key = prov.get('api_key', api_key)
+                    model = mo_clean
+                else:
+                    model = mo_clean
 
         # 1. Google Gemini API
         if prov_key == 'gemini':
@@ -68,23 +101,28 @@ class AIEngine:
                 if or_key:
                     return self._call_openrouter(prompt, system_instruction, or_key, 'google/gemini-2.5-flash')
                 return self._local_fallback_response(prompt)
-            url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}'
+            
+            clean_m = model.replace('gemini/', '')
+            url = f'https://generativelanguage.googleapis.com/v1beta/models/{clean_m}:generateContent?key={api_key}'
             payload = {
                 'contents': [{'parts': [{'text': (system_instruction + '\n\n' + prompt).strip()}]}],
-                'generationConfig': {'temperature': 0.2, 'maxOutputTokens': 1500}
+                'generationConfig': {'temperature': temperature, 'maxOutputTokens': max_tokens}
             }
             try:
-                r = requests.post(url, json=payload, timeout=20)
+                r = requests.post(url, json=payload, timeout=25)
                 if r.status_code == 200:
                     data = r.json()
                     candidates = data.get('candidates', [])
-                    if candidates:
+                    if candidates and 'content' in candidates[0]:
                         return candidates[0]['content']['parts'][0]['text']
-                if 'gemini-3.5' in model:
-                    fallback_url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}'
-                    r2 = requests.post(fallback_url, json=payload, timeout=20)
-                    if r2.status_code == 200:
-                        return r2.json()['candidates'][0]['content']['parts'][0]['text']
+                # Fallback to gemini-2.5-flash
+                fallback_url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}'
+                r2 = requests.post(fallback_url, json=payload, timeout=25)
+                if r2.status_code == 200:
+                    data = r2.json()
+                    candidates = data.get('candidates', [])
+                    if candidates and 'content' in candidates[0]:
+                        return candidates[0]['content']['parts'][0]['text']
             except Exception as e:
                 print(f'Gemini call error: {e}')
 
@@ -92,35 +130,50 @@ class AIEngine:
         elif prov_key == 'openrouter':
             if not api_key:
                 return self._local_fallback_response(prompt)
-            return self._call_openrouter(prompt, system_instruction, api_key, model)
+            return self._call_openrouter(prompt, system_instruction, api_key, model, temperature, max_tokens)
 
         # 3. OpenAI API
         elif prov_key == 'openai':
             if not api_key:
                 return self._local_fallback_response(prompt)
-            headers = {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}
-            payload = {
-                'model': model or 'gpt-4o-mini',
-                'messages': [
-                    {'role': 'system', 'content': system_instruction or 'You are an intelligent file manager assistant.'},
-                    {'role': 'user', 'content': prompt}
-                ],
-                'temperature': 0.2
-            }
-            try:
-                r = requests.post('https://api.openai.com/v1/chat/completions', headers=headers, json=payload, timeout=20)
-                if r.status_code == 200:
-                    return r.json()['choices'][0]['message']['content']
-            except Exception as e:
-                print(f'OpenAI call error: {e}')
+            endpoint = prov.get('endpoint', 'https://api.openai.com/v1').rstrip('/')
+            return self._call_openai_compatible(f"{endpoint}/chat/completions", api_key, model or 'gpt-4o-mini', prompt, system_instruction, temperature, max_tokens)
 
-        # 4. Ollama (Local)
+        # 4. Groq API (Ultra-Fast Inference)
+        elif prov_key == 'groq':
+            if not api_key:
+                return self._local_fallback_response(prompt)
+            endpoint = prov.get('endpoint', 'https://api.groq.com/openai/v1').rstrip('/')
+            return self._call_openai_compatible(f"{endpoint}/chat/completions", api_key, model or 'llama-3.3-70b-versatile', prompt, system_instruction, temperature, max_tokens)
+
+        # 5. DeepSeek API (Official)
+        elif prov_key == 'deepseek':
+            if not api_key:
+                return self._local_fallback_response(prompt)
+            endpoint = prov.get('endpoint', 'https://api.deepseek.com/v1').rstrip('/')
+            return self._call_openai_compatible(f"{endpoint}/chat/completions", api_key, model or 'deepseek-chat', prompt, system_instruction, temperature, max_tokens)
+
+        # 6. Custom OpenAI-Compatible Endpoint (LocalAI, LM Studio, vLLM, etc.)
+        elif prov_key == 'custom':
+            endpoint = prov.get('endpoint', 'http://localhost:1234/v1').rstrip('/')
+            url = f"{endpoint}/chat/completions" if not endpoint.endswith('/chat/completions') else endpoint
+            return self._call_openai_compatible(url, api_key or 'not-needed', model or 'default', prompt, system_instruction, temperature, max_tokens)
+
+        # 7. Ollama (Local Server)
         elif prov_key == 'ollama':
             endpoint = prov.get('endpoint', 'http://localhost:11434').rstrip('/')
+            # Try OpenAI compatible endpoint first
+            try:
+                res = self._call_openai_compatible(f"{endpoint}/v1/chat/completions", 'ollama', model or 'llama3.2', prompt, system_instruction, temperature, max_tokens)
+                if res and res != 'LOCAL_HEURISTIC_MODE':
+                    return res
+            except Exception:
+                pass
+            # Fallback to /api/generate
             url = f'{endpoint}/api/generate'
             payload = {'model': model or 'llama3.2', 'prompt': (system_instruction + '\n\n' + prompt).strip(), 'stream': False}
             try:
-                r = requests.post(url, json=payload, timeout=30)
+                r = requests.post(url, json=payload, timeout=35)
                 if r.status_code == 200:
                     return r.json().get('response', '')
             except Exception as e:
@@ -128,7 +181,30 @@ class AIEngine:
 
         return self._local_fallback_response(prompt)
 
-    def _call_openrouter(self, prompt, system_instruction, api_key, model):
+    def _call_openai_compatible(self, url, api_key, model, prompt, system_instruction, temperature=0.2, max_tokens=1500):
+        headers = {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}
+        payload = {
+            'model': model,
+            'messages': [
+                {'role': 'system', 'content': system_instruction or 'You are an intelligent file manager assistant.'},
+                {'role': 'user', 'content': prompt}
+            ],
+            'temperature': temperature,
+            'max_tokens': max_tokens
+        }
+        try:
+            r = requests.post(url, headers=headers, json=payload, timeout=30)
+            if r.status_code == 200:
+                data = r.json()
+                choices = data.get('choices', [])
+                if choices:
+                    return choices[0]['message']['content']
+            print(f"OpenAI compatible call error ({r.status_code}): {r.text[:200]}")
+        except Exception as e:
+            print(f"OpenAI compatible exception: {e}")
+        return self._local_fallback_response(prompt)
+
+    def _call_openrouter(self, prompt, system_instruction, api_key, model, temperature=0.2, max_tokens=1500):
         headers = {
             'Authorization': f'Bearer {api_key}',
             'Content-Type': 'application/json',

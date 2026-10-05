@@ -470,14 +470,9 @@
                 <span class="status-pill success" style="font-size: 10px;">Ready</span>
               </div>
               <div style="display: flex; align-items: center; gap: var(--space-2);">
-                <!-- Model Dropdown -->
-                <select id="aiModelSelect" class="time-range-select-wrap" style="height: 26px; font-size: 11px;" onchange="changeActiveModel(this.value)">
-                  <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite (Google Default)</option>
-                  <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-                  <option value="openrouter/claude-3.5-sonnet">OpenRouter: Claude 3.5 Sonnet</option>
-                  <option value="openrouter/llama-3.3-70b">OpenRouter: Llama 3.3 70B</option>
-                  <option value="openai/gpt-4o-mini">OpenAI: GPT-4o Mini</option>
-                  <option value="local-heuristic">Agen Mandiri Offline (PowerShell Host)</option>
+                <!-- Dynamic Model Dropdown -->
+                <select id="aiModelSelect" class="time-range-select-wrap" style="height: 26px; font-size: 11px;" onchange="handleAiModelSelectChange(this.value)">
+                  <!-- Dynamically populated via JavaScript -->
                 </select>
                 <button class="btn-clean" onclick="clearChatHistory()" style="height: 26px; padding: 0 8px; font-size: 11px;">
                   <i data-lucide="trash-2" style="width: 12px; height: 12px;"></i> Bersihkan
@@ -589,7 +584,7 @@
                   <div style="font-size: 11.5px; font-weight: 600; color: var(--color-secondary); margin-bottom: var(--space-2);">
                     PILIH PROVIDER UTAMA
                   </div>
-                  <div class="provider-cards-grid">
+                  <div class="provider-cards-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
                     
                     <!-- Card 1: Google Gemini -->
                     <div class="provider-select-card active" id="provCard-gemini" onclick="selectProviderCard('gemini')">
@@ -600,7 +595,7 @@
                         <span class="provider-active-indicator"></span>
                       </div>
                       <div class="provider-name">Google Gemini</div>
-                      <div class="provider-desc">Model native multimodal kecepatan tinggi dengan integrasi Google Developer API.</div>
+                      <div class="provider-desc">Gemini 2.5 Flash, 2.5 Pro, 3.5 Flash Lite via Google AI.</div>
                       <span class="provider-status-badge" style="background-color: #ecfdf5; color: #047857;" id="badgeProv-gemini">Configured</span>
                     </div>
 
@@ -613,7 +608,7 @@
                         <span class="provider-active-indicator"></span>
                       </div>
                       <div class="provider-name">OpenRouter</div>
-                      <div class="provider-desc">Akses multi-vendor: Claude 3.5 Sonnet, Llama 3.3 70B, DeepSeek V3.</div>
+                      <div class="provider-desc">Claude 3.5 Sonnet, Llama 3.3 70B, DeepSeek R1 & V3.</div>
                       <span class="provider-status-badge" style="background-color: #fffbeb; color: #b45309;" id="badgeProv-openrouter">Optional</span>
                     </div>
 
@@ -626,11 +621,63 @@
                         <span class="provider-active-indicator"></span>
                       </div>
                       <div class="provider-name">OpenAI</div>
-                      <div class="provider-desc">Model OpenAI GPT-4o, GPT-4o-mini, dan model penalaran o3-mini.</div>
+                      <div class="provider-desc">GPT-4o, GPT-4o Mini, o1, dan penalaran o3-mini.</div>
                       <span class="provider-status-badge" style="background-color: #f3f4f6; color: var(--color-muted);" id="badgeProv-openai">Optional</span>
                     </div>
 
-                    <!-- Card 4: Local / Offline -->
+                    <!-- Card 4: Groq -->
+                    <div class="provider-select-card" id="provCard-groq" onclick="selectProviderCard('groq')">
+                      <div class="provider-card-header">
+                        <div class="provider-icon-badge" style="color: #ea580c;">
+                          <i data-lucide="zap"></i>
+                        </div>
+                        <span class="provider-active-indicator"></span>
+                      </div>
+                      <div class="provider-name">Groq (Ultra-Fast)</div>
+                      <div class="provider-desc">Inference LPU super cepat: Llama 3.3 70B, Mixtral 8x7B.</div>
+                      <span class="provider-status-badge" style="background-color: #fff7ed; color: #c2410c;" id="badgeProv-groq">Optional</span>
+                    </div>
+
+                    <!-- Card 5: DeepSeek -->
+                    <div class="provider-select-card" id="provCard-deepseek" onclick="selectProviderCard('deepseek')">
+                      <div class="provider-card-header">
+                        <div class="provider-icon-badge" style="color: #0284c7;">
+                          <i data-lucide="brain-circuit"></i>
+                        </div>
+                        <span class="provider-active-indicator"></span>
+                      </div>
+                      <div class="provider-name">DeepSeek API</div>
+                      <div class="provider-desc">DeepSeek-Chat (V3) & DeepSeek-Reasoner (R1) resmi.</div>
+                      <span class="provider-status-badge" style="background-color: #f0f9ff; color: #0369a1;" id="badgeProv-deepseek">Optional</span>
+                    </div>
+
+                    <!-- Card 6: Ollama -->
+                    <div class="provider-select-card" id="provCard-ollama" onclick="selectProviderCard('ollama')">
+                      <div class="provider-card-header">
+                        <div class="provider-icon-badge" style="color: #4b5563;">
+                          <i data-lucide="box"></i>
+                        </div>
+                        <span class="provider-active-indicator"></span>
+                      </div>
+                      <div class="provider-name">Ollama (Lokal)</div>
+                      <div class="provider-desc">Server LLM lokal: Llama 3.2, Qwen 2.5 Coder, Mistral.</div>
+                      <span class="provider-status-badge" style="background-color: #f3f4f6; color: var(--color-muted);" id="badgeProv-ollama">Lokal</span>
+                    </div>
+
+                    <!-- Card 7: Custom Endpoint -->
+                    <div class="provider-select-card" id="provCard-custom" onclick="selectProviderCard('custom')">
+                      <div class="provider-card-header">
+                        <div class="provider-icon-badge" style="color: var(--color-accent);">
+                          <i data-lucide="globe"></i>
+                        </div>
+                        <span class="provider-active-indicator"></span>
+                      </div>
+                      <div class="provider-name">Custom OpenAI-API</div>
+                      <div class="provider-desc">LM Studio, LocalAI, vLLM, atau proxy endpoint kustom.</div>
+                      <span class="provider-status-badge" style="background-color: #f8fafc; color: #334155;" id="badgeProv-custom">Kustom</span>
+                    </div>
+
+                    <!-- Card 8: Local / Offline -->
                     <div class="provider-select-card" id="provCard-local" onclick="selectProviderCard('local')">
                       <div class="provider-card-header">
                         <div class="provider-icon-badge" style="color: var(--color-accent);">
@@ -653,17 +700,38 @@
                   <div class="settings-form-row">
                     <div class="field-label-wrap">
                       <h4>Model Penalaran Aktif</h4>
-                      <p>Pilih model kecerdasan buatan yang dipakai untuk mengeksekusi perintah dan pengorganisasian berkas.</p>
+                      <p>Pilih model kecerdasan buatan atau ketik model kustom apapun secara bebas tanpa batasan.</p>
                     </div>
                     <div class="field-control-wrap">
-                      <div style="display: flex; gap: var(--space-2);">
-                        <select id="settingsModelSelect" class="control-input-clean" style="font-weight: 500;" onchange="handleModelSelectChange(this.value)">
+                      <div style="display: flex; gap: var(--space-2); align-items: center;">
+                        <select id="settingsModelSelect" class="control-input-clean" style="font-weight: 500; flex: 1;" onchange="handleModelSelectChange(this.value)">
                           <!-- Populated dynamically via JavaScript -->
                         </select>
                       </div>
-                      <div style="display: flex; align-items: center; gap: var(--space-2); margin-top: 4px;">
-                        <span style="font-size: 11px; color: var(--color-muted);">Atau ketik nama model kustom:</span>
-                        <input type="text" id="customModelInput" class="control-input-clean" style="height: 28px; width: 260px; font-size: 11px;" placeholder="custom-model-id" oninput="handleCustomModelInput(this.value)">
+                      <div style="display: flex; align-items: center; gap: var(--space-2); margin-top: 6px;">
+                        <span style="font-size: 11px; color: var(--color-muted);">Ketik nama model bebas:</span>
+                        <input type="text" id="customModelInput" class="control-input-clean" style="height: 28px; flex: 1; font-size: 11px; font-family: var(--font-mono);" placeholder="Contoh: deepseek-r1, llama-3.3-70b-versatile, claude-3-5-sonnet-20241022" oninput="handleCustomModelInput(this.value)">
+                        <button type="button" class="btn-clean" onclick="addCustomModelToFavorites()" style="font-size: 11px; height: 28px;">
+                          <i data-lucide="plus" style="width: 12px; height: 12px;"></i> Simpan Model
+                        </button>
+                      </div>
+                      <!-- Custom Saved Models Chips -->
+                      <div id="savedCustomModelsContainer" style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px;"></div>
+                    </div>
+                  </div>
+
+                  <!-- Field 1B: Endpoint / Base URL (for Ollama, Custom, or custom proxies) -->
+                  <div class="settings-form-row" id="rowEndpoint" style="display: none;">
+                    <div class="field-label-wrap">
+                      <h4>Endpoint / Base URL</h4>
+                      <p>URL server API LLM lokal atau endpoint kustom yang kompatibel dengan protokol OpenAI.</p>
+                    </div>
+                    <div class="field-control-wrap">
+                      <div style="display: flex; gap: var(--space-2);">
+                        <input type="text" id="settingsEndpointInput" class="control-input-clean" style="font-family: var(--font-mono); font-size: 11.5px;" placeholder="http://localhost:11434 atau http://localhost:1234/v1">
+                        <button type="button" class="btn-clean" id="btnFetchOllamaModels" onclick="fetchOllamaModels()" style="display: none; white-space: nowrap; font-size: 11px;">
+                          <i data-lucide="download-cloud"></i> Tarik Model Ollama
+                        </button>
                       </div>
                     </div>
                   </div>

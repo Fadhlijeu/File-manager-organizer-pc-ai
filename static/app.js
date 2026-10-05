@@ -23,44 +23,95 @@ let allQueueItems = [];
 let selectedQueueIds = new Set();
 let ws = null;
 
-// Provider & Models Catalog
+// Global Custom User Models List
+let savedCustomModels = [];
+
+// Provider & Models Catalog (8 Providers + Full User Freedom)
 const PROVIDER_METADATA = {
   gemini: {
     name: "Google Gemini",
     models: [
       { id: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash Lite (Cepat & Default)" },
       { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash (Performa Tinggi)" },
-      { id: "gemini-1.5-pro", label: "Gemini 1.5 Pro (Penalaran Kompleks)" }
+      { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro (Penalaran Kompleks)" },
+      { id: "gemini-1.5-pro", label: "Gemini 1.5 Pro (Jendela Konteks Luas)" }
     ],
-    defaultModel: "gemini-3.5-flash-lite"
+    defaultModel: "gemini-3.5-flash-lite",
+    hasKey: true
   },
   openrouter: {
     name: "OpenRouter",
     models: [
       { id: "anthropic/claude-3.5-sonnet", label: "Claude 3.5 Sonnet (Anthropic)" },
+      { id: "deepseek/deepseek-r1", label: "DeepSeek R1 Reasoning (DeepSeek)" },
       { id: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B (Meta)" },
       { id: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash via OpenRouter" },
-      { id: "deepseek/deepseek-chat", label: "DeepSeek V3 (DeepSeek)" }
+      { id: "mistralai/mistral-large-2411", label: "Mistral Large 2411" }
     ],
-    defaultModel: "anthropic/claude-3.5-sonnet"
+    defaultModel: "anthropic/claude-3.5-sonnet",
+    hasKey: true
   },
   openai: {
     name: "OpenAI",
     models: [
       { id: "gpt-4o-mini", label: "GPT-4o Mini (Cepat & Hemat)" },
       { id: "gpt-4o", label: "GPT-4o (Flagship Multimodal)" },
-      { id: "o3-mini", label: "o3-mini (Reasoning Model)" }
+      { id: "o3-mini", label: "o3-mini (Reasoning Model)" },
+      { id: "o1", label: "o1 (Penalaran Mendalam)" }
     ],
-    defaultModel: "gpt-4o-mini"
+    defaultModel: "gpt-4o-mini",
+    hasKey: true
+  },
+  groq: {
+    name: "Groq (Ultra-Fast)",
+    models: [
+      { id: "llama-3.3-70b-versatile", label: "Llama 3.3 70B Versatile (~300 t/s)" },
+      { id: "llama-3.1-8b-instant", label: "Llama 3.1 8B Instant (~800 t/s)" },
+      { id: "mixtral-8x7b-32768", label: "Mixtral 8x7B (Konteks 32k)" }
+    ],
+    defaultModel: "llama-3.3-70b-versatile",
+    hasKey: true
+  },
+  deepseek: {
+    name: "DeepSeek API",
+    models: [
+      { id: "deepseek-chat", label: "DeepSeek-V3 (DeepSeek Chat)" },
+      { id: "deepseek-reasoner", label: "DeepSeek-R1 (DeepSeek Reasoner)" }
+    ],
+    defaultModel: "deepseek-chat",
+    hasKey: true
+  },
+  ollama: {
+    name: "Ollama (Lokal)",
+    models: [
+      { id: "llama3.2", label: "Ollama: Llama 3.2" },
+      { id: "qwen2.5-coder", label: "Ollama: Qwen 2.5 Coder" },
+      { id: "mistral", label: "Ollama: Mistral" },
+      { id: "deepseek-r1", label: "Ollama: DeepSeek R1" }
+    ],
+    defaultModel: "llama3.2",
+    hasKey: false,
+    needsEndpoint: true,
+    defaultEndpoint: "http://localhost:11434"
+  },
+  custom: {
+    name: "Custom OpenAI-Compatible",
+    models: [
+      { id: "default-model", label: "Model Bawaan Server Kustom" },
+      { id: "local-model", label: "Local LLM (LM Studio / vLLM)" }
+    ],
+    defaultModel: "default-model",
+    hasKey: true,
+    needsEndpoint: true,
+    defaultEndpoint: "http://localhost:1234/v1"
   },
   local: {
     name: "Agen Lokal Mandiri",
     models: [
-      { id: "local-heuristic", label: "PowerShell Host Agent (Offline & Otomatis)" },
-      { id: "ollama/llama3.2", label: "Ollama: Llama 3.2 (Local Host)" },
-      { id: "ollama/qwen2.5-coder", label: "Ollama: Qwen 2.5 Coder (Local Host)" }
+      { id: "local-heuristic", label: "PowerShell Host Agent (Offline & Otomatis)" }
     ],
-    defaultModel: "local-heuristic"
+    defaultModel: "local-heuristic",
+    hasKey: false
   }
 };
 
@@ -504,6 +555,10 @@ async function loadSettingsFromServer() {
     // Render Watch Paths table
     renderWatchPathsTable();
 
+    // Load saved custom models
+    savedCustomModels = cfg.custom_models || [];
+    renderCustomModelsChips();
+
     // Select active provider card
     selectProviderCard(activeProvider, false);
 
@@ -511,12 +566,8 @@ async function loadSettingsFromServer() {
     const pill = document.getElementById('settingsActiveProviderPill');
     if (pill) pill.textContent = `Active: ${PROVIDER_METADATA[activeProvider]?.name || activeProvider}`;
 
-    // Update AI Assistant model selector
-    const aiModelSelect = document.getElementById('aiModelSelect');
-    if (aiModelSelect) {
-      const curModel = providersConfig[activeProvider]?.model || PROVIDER_METADATA[activeProvider]?.defaultModel;
-      if (curModel) aiModelSelect.value = curModel;
-    }
+    // Update AI Assistant model selector dynamically
+    refreshChatModelDropdown();
 
     initLucide();
   } catch (err) {
@@ -550,8 +601,28 @@ function selectProviderCard(provKey, triggerToast = true) {
     keyInput.value = providersConfig[provKey]?.api_key || '';
   }
 
+  // Show/hide Endpoint row
+  const rowEndpoint = document.getElementById('rowEndpoint');
+  const endpointInput = document.getElementById('settingsEndpointInput');
+  const btnOllama = document.getElementById('btnFetchOllamaModels');
+
+  if (rowEndpoint) {
+    if (meta.needsEndpoint || provKey === 'custom' || provKey === 'ollama') {
+      rowEndpoint.style.display = 'flex';
+      if (endpointInput) {
+        endpointInput.value = providersConfig[provKey]?.endpoint || meta.defaultEndpoint || '';
+      }
+      if (btnOllama) {
+        btnOllama.style.display = (provKey === 'ollama') ? 'inline-flex' : 'none';
+      }
+    } else {
+      rowEndpoint.style.display = 'none';
+    }
+  }
+
   // Update status badges on cards
   updateProviderCardBadges();
+  refreshChatModelDropdown();
 
   // Clear previous test results
   hideTestResultBanner();
@@ -629,6 +700,7 @@ async function testCurrentProviderKey() {
       })
     });
     const data = await res.json();
+    clearInterval(phaseTimer);
     showTestResultBanner(data.success, data.message);
   } catch (err) {
     showTestResultBanner(false, `Gagal memverifikasi API: ${err.message}`);
@@ -720,6 +792,13 @@ async function saveAllSettingsForm() {
     providersConfig[activeProvider].model = modelSelect.value;
   }
 
+  // Capture endpoint if visible
+  const endpointInput = document.getElementById('settingsEndpointInput');
+  if (endpointInput && endpointInput.value.trim()) {
+    if (!providersConfig[activeProvider]) providersConfig[activeProvider] = {};
+    providersConfig[activeProvider].endpoint = endpointInput.value.trim();
+  }
+
   const payload = {
     active_provider: activeProvider,
     providers: providersConfig,
@@ -727,7 +806,8 @@ async function saveAllSettingsForm() {
     academic_base: document.getElementById('baseAcademicInput')?.value.trim() || basePaths.academic_base,
     personal_base: document.getElementById('personal_base')?.value.trim() || basePaths.personal_base,
     project_base: document.getElementById('baseProjectInput')?.value.trim() || basePaths.project_base,
-    game_base: document.getElementById('baseGameInput')?.value.trim() || basePaths.game_base
+    game_base: document.getElementById('baseGameInput')?.value.trim() || basePaths.game_base,
+    custom_models: savedCustomModels
   };
 
   try {
@@ -737,6 +817,7 @@ async function saveAllSettingsForm() {
       body: JSON.stringify(payload)
     });
     const data = await res.json();
+    clearInterval(phaseTimer);
     if (data.success) {
       showToast("Pengaturan berhasil disimpan & diterapkan ke sistem!");
       loadSettingsFromServer();
@@ -756,6 +837,7 @@ async function navigatePath(targetPath) {
   try {
     const res = await fetch(`/api/browse?path=${encodeURIComponent(targetPath)}`);
     const data = await res.json();
+    clearInterval(phaseTimer);
 
     if (data.error) {
       showToast(`Gagal memuat direktori: ${data.error}`);
@@ -948,6 +1030,7 @@ async function openFilePreview(path) {
   try {
     const res = await fetch(`/api/file/preview?path=${encodeURIComponent(path)}`);
     const data = await res.json();
+    clearInterval(phaseTimer);
     const dlg = document.getElementById('previewModalDialog');
     const title = document.getElementById('modalFileName');
     const body = document.getElementById('modalFileBody');
@@ -1045,18 +1128,40 @@ async function handleChatSubmit(e) {
   userBubble.innerHTML = formatMentionTagsInMessage(fullMessage);
   box.appendChild(userBubble);
 
-  // AI placeholder with spinner
+  // Live thinking indicator with animated pulse & cycling phases
   const aiBubble = document.createElement('div');
   aiBubble.className = 'chat-bubble-ai';
   aiBubble.innerHTML = `
-    <div style="display: flex; align-items: center; gap: 8px; color: var(--color-muted);">
-      <i data-lucide="loader" style="animation: spin 1s infinite linear; width: 14px; height: 14px;"></i>
-      <span>Agen sedang bernalar & mengeksekusi alat sistem...</span>
+    <div class="agent-thinking-wrapper" id="agentThinkingBox">
+      <div class="agent-pulse-pill">
+        <span class="agent-pulse-dot"></span>
+        <span class="agent-phase-title" id="liveAgentStatus">Menghubungkan ke agen kernel host...</span>
+      </div>
+      <div class="agent-live-log-strip" id="liveAgentDetail">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        <span id="liveAgentDetailText">Memeriksa instruksi & path aktif ${escapeHtml(currentPath)}...</span>
+      </div>
     </div>
   `;
   box.appendChild(aiBubble);
   box.scrollTop = box.scrollHeight;
   initLucide();
+
+  // Dynamic phase updater during background execution
+  const livePhases = [
+    { title: "Mengeksekusi observasi PowerShell host...", detail: "Menghitung dan memindai direktori kernel D:\\..." },
+    { title: "Menganalisis berkas & struktur silabus...", detail: "Mencocokkan silabus 2KA31 / 3KA31 & ekstensi berkas..." },
+    { title: "Memverifikasi integritas filesystem...", detail: "Membaca metadata ukuran dan tanggal berkas..." },
+    { title: "Menyusun respons laporan terstruktur & widget visual...", detail: "Mengemas data hasil observasi menjadi format analitis..." }
+  ];
+  let phaseIdx = 0;
+  const phaseTimer = setInterval(() => {
+    phaseIdx = (phaseIdx + 1) % livePhases.length;
+    const stTitle = document.getElementById('liveAgentStatus');
+    const stDetail = document.getElementById('liveAgentDetailText');
+    if (stTitle) stTitle.textContent = livePhases[phaseIdx].title;
+    if (stDetail) stDetail.textContent = livePhases[phaseIdx].detail;
+  }, 1300);
 
   // Clear input & close popup
   input.value = '';
@@ -1078,21 +1183,30 @@ async function handleChatSubmit(e) {
       })
     });
     const data = await res.json();
+    clearInterval(phaseTimer);
 
     let bubbleContent = '';
 
-    // Events timeline accordion
+    // 1. Render accordion if any events took place
     if (data.events && data.events.length > 0) {
       bubbleContent += renderAgentEventAccordion(data.events);
     }
 
-    // Markdown content
+    // 2. Prepare markdown content & custom widgets
     const finalMd = data.reply || "Tugas selesai.";
     let renderedMd = renderMarkdown(finalMd);
     renderedMd = formatMentionTagsInHtml(renderedMd);
-    bubbleContent += `<div class="agent-final-content">${renderedMd}</div>`;
+
+    // 3. Setup container and stream smoothly with real-time typewriter effect
+    const contentContainer = document.createElement('div');
+    contentContainer.className = 'agent-final-content';
 
     aiBubble.innerHTML = bubbleContent;
+    aiBubble.appendChild(contentContainer);
+
+    streamTextToElement(contentContainer, renderedMd, () => {
+      initLucide();
+    }, box);
 
     if (data.actions_taken && data.actions_taken.length > 0) {
       refreshCurrentFolder();
@@ -1100,6 +1214,7 @@ async function handleChatSubmit(e) {
       fetchStorageDetails();
     }
   } catch (err) {
+    clearInterval(phaseTimer);
     aiBubble.innerHTML = `<span style="color: var(--color-danger);">Error komunikasi: ${escapeHtml(err.message)}</span>`;
   }
   box.scrollTop = box.scrollHeight;
@@ -1144,14 +1259,216 @@ function renderAgentEventAccordion(events) {
   `;
 }
 
+// Custom UI Widget & Robust Markdown Engine
 function renderMarkdown(raw) {
   if (!raw) return '';
+  let text = String(raw);
+
+  // 1. Safeguard against raw JSON leak from ReAct finish tool
+  if (text.trim().startsWith('{') && (text.includes('"final_answer"') || text.includes('"action": "finish"'))) {
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed.args && parsed.args.final_answer) {
+        text = parsed.args.final_answer;
+      } else if (parsed.final_answer) {
+        text = parsed.final_answer;
+      } else if (parsed.thought) {
+        text = parsed.thought;
+      }
+    } catch (e) {
+      const mFa = text.match(/"final_answer"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+      if (mFa) {
+        try { text = JSON.parse(`"${mFa[1]}"`); } catch (e2) { text = mFa[1]; }
+      }
+    }
+  }
+
+  // 2. Parse Custom Widget: :::stats-grid
+  text = text.replace(/:::stats-grid\s*([\s\S]*?)\s*:::/gi, (match, body) => {
+    const cards = [];
+    const lines = body.trim().split('\n');
+    lines.forEach(l => {
+      const parts = l.split('|').map(s => s.trim());
+      if (parts.length >= 2) {
+        const label = escapeHtml(parts[0]);
+        const val = escapeHtml(parts[1]);
+        const meta = parts[2] ? escapeHtml(parts[2]) : '';
+        const color = parts[3] ? escapeHtml(parts[3]) : 'var(--color-accent)';
+        cards.push(`
+          <div class="custom-ui-metric-card">
+            <div class="metric-card-label">${label}</div>
+            <div class="metric-card-value" style="color: ${color};">${val}</div>
+            <div class="metric-card-bar"><div class="metric-bar-fill" style="width: 100%; background-color: ${color};"></div></div>
+            ${meta ? `<div class="metric-card-meta">${meta}</div>` : ''}
+          </div>
+        `);
+      }
+    });
+    return `\n\n<div class="custom-ui-metric-grid">${cards.join('')}</div>\n\n`;
+  });
+
+  // 3. Parse Custom Widget: :::file-tree
+  text = text.replace(/:::file-tree\s*([\s\S]*?)\s*:::/gi, (match, body) => {
+    return renderCustomFileTreeFromText(body);
+  });
+
+  // 4. Auto-detect lists of academic/directory files and transform into interactive file tree
+  text = autoEnhanceFileListToTree(text);
+
+  // 5. Marked.js Markdown Parsing
+  let html = '';
   if (typeof marked !== 'undefined' && marked.parse) {
     try {
-      return marked.parse(raw);
-    } catch (e) {}
+      html = marked.parse(text);
+    } catch (e) {
+      html = escapeHtml(text).replace(/\n/g, '<br>');
+    }
+  } else {
+    html = escapeHtml(text).replace(/\n/g, '<br>');
   }
-  return escapeHtml(raw).replace(/\n/g, '<br>');
+
+  // 6. Enhance code blocks with container, language header & copy button
+  html = html.replace(/<pre><code(?: class="language-([^"]*)")?>([\s\S]*?)<\/code><\/pre>/gi, (match, lang, codeContent) => {
+    const l = lang ? lang.toUpperCase() : 'CODE';
+    return `
+      <div class="code-block-container">
+        <div class="code-block-header">
+          <span>${escapeHtml(l)}</span>
+          <button type="button" class="btn-copy-code" onclick="copyCodeBlock(this)">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <span>Salin</span>
+          </button>
+        </div>
+        <pre><code class="${lang ? 'language-' + lang : ''}">${codeContent}</code></pre>
+      </div>
+    `;
+  });
+
+  return html;
+}
+
+// Interactive File Tree Renderer
+function renderCustomFileTreeFromText(body) {
+  const lines = body.trim().split('\n');
+  const items = [];
+  let fileCount = 0;
+
+  lines.forEach(line => {
+    const indent = line.length - line.trimStart().length;
+    const s = line.trim();
+    if (!s) return;
+
+    if (s.startsWith('[DIR]')) {
+      const dname = escapeHtml(s.slice(5).trim());
+      items.push(`
+        <div class="tree-folder-group">
+          <div class="tree-folder-title" style="margin-left: ${Math.min(indent * 4, 32)}px;" onclick="toggleTreeGroup(this)">
+            <svg class="tree-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transition: transform 0.15s ease;"><polyline points="9 18 15 12 9 6"/></svg>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+            <span>${dname}</span>
+          </div>
+        </div>
+      `);
+    } else {
+      let finfo = s.startsWith('[FILE]') ? s.slice(6).trim() : s.replace(/^[-*]\s*/, '').trim();
+      let parts = finfo.split('|');
+      let fname = parts[0].trim();
+      let fsize = parts[1] ? parts[1].trim() : '';
+      fileCount++;
+
+      let ext = fname.includes('.') ? fname.split('.').pop().toLowerCase() : 'file';
+      let badgeClass = ['xlsx', 'pdf', 'docx', 'py', 'zip', 'txt'].includes(ext) ? ext : 'other';
+
+      items.push(`
+        <div class="tree-file-item" style="margin-left: ${Math.min((indent + 2) * 4, 36)}px;">
+          <span class="file-ext-badge ${badgeClass}">${escapeHtml(ext)}</span>
+          <span class="file-name" title="${escapeHtml(fname)}">${escapeHtml(fname)}</span>
+          ${fsize ? `<span class="file-size">${escapeHtml(fsize)}</span>` : ''}
+          <div class="file-actions">
+            <button type="button" class="btn-tree-action" onclick="copyFilePath('${escapeHtml(fname.replace(/'/g, "\\'"))}')" title="Salin nama/path berkas">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </button>
+            <button type="button" class="btn-tree-action" onclick="insertTokenIntoChat('@file:\\"${escapeHtml(fname.replace(/"/g, '\\"'))}\\" ')" title="Tandai target mention @file">
+              @file
+            </button>
+          </div>
+        </div>
+      `);
+    }
+  });
+
+  return `
+    <div class="custom-ui-tree">
+      <div class="custom-ui-tree-header">
+        <div class="tree-header-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+          <span>Struktur Direktori Berkas</span>
+        </div>
+        <span class="tree-count-badge">${fileCount} berkas ditampilkan</span>
+      </div>
+      <div class="custom-ui-tree-body">
+        ${items.join('')}
+      </div>
+    </div>
+  `;
+}
+
+// Auto enhance file bullet lists to tree
+function autoEnhanceFileListToTree(text) {
+  if (text.includes(':::file-tree')) return text;
+
+  const fileExts = ['\\.docx', '\\.xlsx', '\\.pdf', '\\.py', '\\.zip', '\\.pptx', '\\.txt', '\\.java', '\\.rar'];
+  const extRegex = new RegExp(`(?:${fileExts.join('|')})`, 'i');
+  
+  const lines = text.split('\n');
+  let matchingLines = 0;
+  lines.forEach(l => {
+    if (/^\s*[-*]\s+/.test(l) && extRegex.test(l)) {
+      matchingLines++;
+    }
+  });
+
+  if (matchingLines >= 3) {
+    let inList = false;
+    let listBuffer = [];
+    const newLines = [];
+
+    lines.forEach(l => {
+      const isBullet = /^\s*[-*]\s+/.test(l);
+      if (isBullet && (extRegex.test(l) || !l.includes('.'))) {
+        inList = true;
+        const indent = l.length - l.trimStart().length;
+        const rawItem = l.replace(/^\s*[-*]\s+/, '').trim();
+        const indentStr = ' '.repeat(indent);
+        if (extRegex.test(rawItem)) {
+          listBuffer.push(`${indentStr}[FILE] ${rawItem}`);
+        } else {
+          listBuffer.push(`${indentStr}[DIR] ${rawItem}`);
+        }
+      } else {
+        if (inList && listBuffer.length >= 3) {
+          newLines.push(':::file-tree\n' + listBuffer.join('\n') + '\n:::');
+          listBuffer = [];
+          inList = false;
+        } else if (inList) {
+          newLines.push(...listBuffer.map(b => b.replace(/\[DIR\]|\[FILE\]/g, '-')));
+          listBuffer = [];
+          inList = false;
+        }
+        newLines.push(l);
+      }
+    });
+
+    if (inList && listBuffer.length >= 3) {
+      newLines.push(':::file-tree\n' + listBuffer.join('\n') + '\n:::');
+    } else if (inList) {
+      newLines.push(...listBuffer.map(b => b.replace(/\[DIR\]|\[FILE\]/g, '-')));
+    }
+
+    return newLines.join('\n');
+  }
+
+  return text;
 }
 
 /* ========================================================
@@ -1461,6 +1778,7 @@ async function fetchStorageDetails() {
   try {
     const res = await fetch('/api/storage/details');
     const data = await res.json();
+    clearInterval(phaseTimer);
     renderStorageDetails(data);
   } catch (e) {
     console.warn("Storage fetch error:", e);
@@ -1557,4 +1875,236 @@ function escapeHtml(str) {
 function escapePath(p) {
   if (!p) return '';
   return p.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+/* ============================================================ */
+/* REAL-TIME TYPEWRITER STREAMER & WIDGET HELPERS              */
+/* ============================================================ */
+function streamTextToElement(element, fullHtml, onComplete, scrollContainer) {
+  element.innerHTML = '<span class="typing-cursor"></span>';
+  let isCancelled = false;
+
+  // Add Skip button
+  const skipBtn = document.createElement('button');
+  skipBtn.className = 'skip-typing-btn';
+  skipBtn.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg> Lewati Animasi';
+  skipBtn.onclick = () => {
+    isCancelled = true;
+    skipBtn.remove();
+    element.innerHTML = fullHtml;
+    if (scrollContainer) scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    if (onComplete) onComplete();
+  };
+  element.parentNode.insertBefore(skipBtn, element);
+
+  // Tokenize HTML so tags don't break during typing
+  const tokens = [];
+  const tagRegex = /<[^>]+>|[^<>\s]+|\s+/g;
+  let m;
+  while ((m = tagRegex.exec(fullHtml)) !== null) {
+    tokens.push(m[0]);
+  }
+
+  let idx = 0;
+  let currentHtml = '';
+  const batchSize = 3;
+
+  function tick() {
+    if (isCancelled) return;
+    if (idx >= tokens.length) {
+      skipBtn.remove();
+      element.innerHTML = fullHtml;
+      if (scrollContainer) scrollContainer.scrollTop = scrollContainer.scrollHeight;
+      if (onComplete) onComplete();
+      return;
+    }
+
+    for (let i = 0; i < batchSize && idx < tokens.length; i++) {
+      currentHtml += tokens[idx];
+      idx++;
+    }
+
+    element.innerHTML = currentHtml + '<span class="typing-cursor"></span>';
+    if (scrollContainer) scrollContainer.scrollTop = scrollContainer.scrollHeight;
+
+    setTimeout(tick, 14);
+  }
+
+  tick();
+}
+
+function copyCodeBlock(btn) {
+  const container = btn.closest('.code-block-container');
+  const codeEl = container ? container.querySelector('code') : null;
+  if (!codeEl) return;
+
+  navigator.clipboard.writeText(codeEl.innerText).then(() => {
+    const label = btn.querySelector('span');
+    if (label) label.textContent = 'Disalin!';
+    setTimeout(() => { if (label) label.textContent = 'Salin'; }, 1800);
+  });
+}
+
+function copyFilePath(path) {
+  navigator.clipboard.writeText(path).then(() => {
+    showToast(`Path disalin: ${path}`);
+  });
+}
+
+function toggleTreeGroup(headerEl) {
+  const group = headerEl.closest('.tree-folder-group');
+  const chevron = headerEl.querySelector('.tree-chevron');
+  if (chevron) {
+    const isRot = chevron.style.transform === 'rotate(90deg)';
+    chevron.style.transform = isRot ? 'rotate(0deg)' : 'rotate(90deg)';
+  }
+}
+
+/* ============================================================ */
+/* CUSTOM MODEL & EXPANDED PROVIDER CONTROLLER                  */
+/* ============================================================ */
+function refreshChatModelDropdown() {
+  const select = document.getElementById('aiModelSelect');
+  if (!select) return;
+
+  const currentVal = activeModel;
+  select.innerHTML = '';
+
+  // 1. Active Provider Models
+  const meta = PROVIDER_METADATA[activeProvider] || PROVIDER_METADATA.gemini;
+  const grpActive = document.createElement('optgroup');
+  grpActive.label = `Provider Aktif (${meta.name})`;
+  meta.models.forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m.id;
+    opt.textContent = m.label;
+    grpActive.appendChild(opt);
+  });
+  select.appendChild(grpActive);
+
+  // 2. Saved Custom Models
+  if (savedCustomModels && savedCustomModels.length > 0) {
+    const grpCustom = document.createElement('optgroup');
+    grpCustom.label = 'Model Kustom Pengguna';
+    savedCustomModels.forEach(cm => {
+      const opt = document.createElement('option');
+      opt.value = cm;
+      opt.textContent = cm;
+      grpCustom.appendChild(opt);
+    });
+    select.appendChild(grpCustom);
+  }
+
+  // 3. Other Popular Providers
+  const grpOther = document.createElement('optgroup');
+  grpOther.label = 'Model Populer Lainnya';
+  grpOther.innerHTML = `
+    <option value="openrouter/anthropic/claude-3.5-sonnet">OpenRouter: Claude 3.5 Sonnet</option>
+    <option value="openrouter/deepseek/deepseek-r1">OpenRouter: DeepSeek R1</option>
+    <option value="groq/llama-3.3-70b-versatile">Groq: Llama 3.3 70B Versatile</option>
+    <option value="deepseek/deepseek-chat">DeepSeek: DeepSeek-V3</option>
+    <option value="openai/gpt-4o-mini">OpenAI: GPT-4o Mini</option>
+    <option value="local-heuristic">Agen Mandiri Offline (PowerShell)</option>
+  `;
+  select.appendChild(grpOther);
+
+  // 4. Action Option: Add custom model
+  const optAdd = document.createElement('option');
+  optAdd.value = '__ADD_CUSTOM__';
+  optAdd.textContent = '+ Tambah Model Kustom...';
+  select.appendChild(optAdd);
+
+  // Restore selection
+  if (currentVal && select.querySelector(`option[value="${currentVal}"]`)) {
+    select.value = currentVal;
+  } else if (meta.defaultModel) {
+    select.value = meta.defaultModel;
+    activeModel = meta.defaultModel;
+  }
+}
+
+function handleAiModelSelectChange(val) {
+  if (val === '__ADD_CUSTOM__') {
+    switchNav('settings');
+    const input = document.getElementById('customModelInput');
+    if (input) {
+      input.focus();
+      input.scrollIntoView({ behavior: 'smooth' });
+    }
+    showToast("Ketik nama model kustom yang ingin ditambahkan.");
+    refreshChatModelDropdown();
+    return;
+  }
+  activeModel = val;
+  showToast(`Model aktif: ${val}`);
+}
+
+function addCustomModelToFavorites() {
+  const input = document.getElementById('customModelInput');
+  const val = input ? input.value.trim() : '';
+  if (!val) {
+    showToast("Ketik nama model terlebih dahulu.");
+    return;
+  }
+
+  if (!savedCustomModels.includes(val)) {
+    savedCustomModels.push(val);
+    renderCustomModelsChips();
+    refreshChatModelDropdown();
+    showToast(`Model '${val}' disimpan ke daftar.`);
+    saveSettingsToServer();
+  }
+  input.value = '';
+}
+
+function removeCustomModel(modelId) {
+  savedCustomModels = savedCustomModels.filter(m => m !== modelId);
+  renderCustomModelsChips();
+  refreshChatModelDropdown();
+  showToast(`Model '${modelId}' dihapus.`);
+  saveSettingsToServer();
+}
+
+function renderCustomModelsChips() {
+  const container = document.getElementById('savedCustomModelsContainer');
+  if (!container) return;
+
+  if (savedCustomModels.length === 0) {
+    container.innerHTML = '<span style="font-size: 10.5px; color: var(--color-muted);">Belum ada model kustom tersimpan.</span>';
+    return;
+  }
+
+  container.innerHTML = savedCustomModels.map(m => `
+    <span class="mention-card" style="background: #f1f5f9; color: #1e293b; border: 1px solid #cbd5e1; gap: 4px; padding: 2px 6px;">
+      <span>${escapeHtml(m)}</span>
+      <button type="button" onclick="removeCustomModel('${escapeHtml(m.replace(/'/g, "\\'"))}')" style="background:none; border:none; cursor:pointer; color: #94a3b8; font-size: 11px; padding: 0 2px;">&times;</button>
+    </span>
+  `).join('');
+}
+
+function saveSettingsToServer() {
+  saveSettings();
+}
+
+async function fetchOllamaModels() {
+  const btn = document.getElementById('btnFetchOllamaModels');
+  const endpoint = document.getElementById('settingsEndpointInput')?.value || "http://localhost:11434";
+  if (btn) btn.innerHTML = '<i data-lucide="loader" style="animation: spin 1s infinite linear;"></i> Memeriksa...';
+
+  try {
+    const res = await fetch(`/api/models/ollama?endpoint=${encodeURIComponent(endpoint)}`);
+    const data = await res.json();
+    if (data.success && data.models && data.models.length > 0) {
+      PROVIDER_METADATA.ollama.models = data.models.map(m => ({ id: m, label: `Ollama: ${m}` }));
+      selectProviderCard('ollama', false);
+      showToast(`Berhasil menarik ${data.models.length} model dari Ollama!`);
+    } else {
+      showToast(`Gagal: ${data.error || 'Tidak ada model ditemukan di server Ollama.'}`);
+    }
+  } catch (err) {
+    showToast(`Error menghubungi Ollama: ${err.message}`);
+  } finally {
+    if (btn) btn.innerHTML = '<i data-lucide="download-cloud"></i> Tarik Model Ollama';
+    initLucide();
+  }
 }
