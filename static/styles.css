@@ -2287,3 +2287,124 @@ a {
   border-color: #f87171;
   color: #b91c1c;
 }
+
+
+/* AI Model Header Select */
+.ai-header-select {
+  height: 28px;
+  padding: 0 8px;
+  font-size: 11.5px;
+  font-weight: 500;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-ctrl);
+  background-color: var(--color-surface);
+  color: var(--color-primary);
+  outline: none;
+  cursor: pointer;
+  min-width: 190px;
+  max-width: 280px;
+}
+.ai-header-select:focus {
+  border-color: #3b82f6;
+}
+
+/* Tree Folder Hierarchy & Smooth Dropdown */
+.tree-folder-group {
+  margin-bottom: 2px;
+}
+.tree-folder-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 4px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--color-primary);
+  transition: background 0.12s ease;
+}
+.tree-folder-title:hover {
+  background-color: #f1f5f9;
+}
+.tree-folder-children {
+  display: block;
+  padding-left: 16px;
+  border-left: 1px dashed #e2e8f0;
+  margin-left: 9px;
+  margin-top: 2px;
+}
+
+/* Semantic Interactive Action Buttons in Chat */
+.custom-ui-action-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+  padding: 8px 10px;
+  background: var(--color-sidebar);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.custom-ui-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  cursor: pointer;
+  color: var(--color-primary);
+  transition: all 0.15s ease;
+}
+
+.custom-ui-action-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+}
+
+.custom-ui-action-btn.danger {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+
+.custom-ui-action-btn.danger:hover {
+  background: #fee2e2;
+  border-color: #ef4444;
+}
+
+.custom-ui-action-btn.primary {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+.custom-ui-action-btn.primary:hover {
+  background: #dbeafe;
+  border-color: #3b82f6;
+}
+
+.custom-ui-action-btn.secondary {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #475569;
+}
+
+.custom-ui-action-btn.secondary:hover {
+  background: #f1f5f9;
+}
+
+.custom-ui-action-btn.executed {
+  background: #f0fdf4 !important;
+  border-color: #86efac !important;
+  color: #15803d !important;
+  cursor: default;
+  pointer-events: none;
+}

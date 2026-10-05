@@ -320,7 +320,7 @@ class AutonomousAgent:
         self.ai_engine = ai_engine
         self.toolbox = AgentToolbox()
 
-    def run(self, user_prompt: str, current_path: str = "D:\\", mentioned_items: List[str] = None, model_override: str = None, provider_override: str = None) -> Dict[str, Any]:
+    def run(self, user_prompt: str, current_path: str = "D:\\", mentioned_items: List[str] = None, model_override: str = None, provider_override: str = None, history: List[dict] = None) -> Dict[str, Any]:
         mentioned_items = mentioned_items or []
         events = []
         actions_taken = []
@@ -355,15 +355,28 @@ class AutonomousAgent:
 
         # If offline or no key available, run the Local Autonomous Agent
         if not has_key and prov_key != 'ollama':
-            res = self._run_local_autonomous_agent(user_prompt, current_path, mentioned_items, resolved_mentions)
+            res = self._run_local_autonomous_agent(user_prompt, current_path, mentioned_items, resolved_mentions, dialogue_history=history)
             res['reply'] = strip_emojis(res.get('reply', ''))
             return res
 
         # Cloud ReAct Multi-Turn Loop
-        res = self._run_cloud_react_loop(user_prompt, current_path, mentioned_items, resolved_mentions, model_override, provider_override=prov_key)
+        res = self._run_cloud_react_loop(user_prompt, current_path, mentioned_items, resolved_mentions, model_override, provider_override=prov_key, dialogue_history=history)
         res['reply'] = strip_emojis(res.get('reply', ''))
         return res
 
+
+    def _format_dialogue_history(self, dialogue_history: list) -> str:
+        if not dialogue_history:
+            return "(Tidak ada percakapan sebelumnya. Ini adalah pesan pertama dalam sesi.)"
+        lines = []
+        for h in dialogue_history[-6:]:
+            role = "Pengguna" if h.get('role') == 'user' else "Asisten Agen"
+            content = (h.get('content') or '').strip()
+            # truncate long content in history
+            if len(content) > 300:
+                content = content[:300] + '...'
+            lines.append(f"{role}: {content}")
+        return "\n".join(lines)
 
     def _format_resolved_mentions_for_prompt(self, resolved_mentions: list) -> str:
         if not resolved_mentions:
@@ -427,13 +440,13 @@ class AutonomousAgent:
         except Exception as e:
             return f"Error executing tool {action_name}: {str(e)}"
 
-    def _run_cloud_react_loop(self, user_prompt: str, current_path: str, mentioned_items: List[str], resolved_mentions: List[dict] = None, model_override: str = None, provider_override: str = None) -> Dict[str, Any]:
+    def _run_cloud_react_loop(self, user_prompt: str, current_path: str, mentioned_items: List[str], resolved_mentions: List[dict] = None, model_override: str = None, provider_override: str = None, dialogue_history: List[dict] = None) -> Dict[str, Any]:
         events = []
         actions_taken = []
         max_turns = 8
         conversation_history = []
 
-        system_instruction = f"""Anda adalah Autonomous AI File Manager Agent pada sistem operasi Windows.
+        system_instruction = rf"""Anda adalah Autonomous AI File Manager Agent pada sistem operasi Windows.
 Anda memiliki akses langsung ke sistem melalui Tools (termasuk powershell_exec untuk menjalankan perintah PowerShell apa pun).
 
 INFORMASI HOST & KONTEKS:
@@ -484,7 +497,20 @@ ATURAN PENTING & FORMAT JAWABAN AKHIR (UI WIDGETS):
 - Jika pengguna bertanya 'ada berapa total file perkuliahan', segera jalankan powershell_exec untuk menghitung total dan rincian semester!
 - Jika pengguna meminta 'rapihkan folder ...', amati isi foldernya, baca dokumen jika perlu, pindahkan berkas ke tempat yang tepat, lalu laporkan hasilnya.
 
+RIWAYAT PERCAKAPAN SEBELUMNYA DENGAN PENGGUNA (Sangat Penting):
+{self._format_dialogue_history(dialogue_history)}
+
 WIDGET UI BUATAN (Gunakan untuk tampilan yang memukau dan interaktif):
+3. Jika meminta konfirmasi (seperti hapus berkas, pindahkan berkas, atau saran eksekusi), SELALU sertakan tombol aksi semantik interaktif agar pengguna dapat langsung mengkliknya:
+:::action-btn
+[Label Tombol Semantik] | [danger/primary/secondary] | [powershell:perintah ATAU chat:pesan_lengkap] | [Deskripsi singkat]
+:::
+Contoh saat konfirmasi hapus berkas:
+:::action-btn
+[Ya, Hapus Sekarang] | danger | powershell:Remove-Item -LiteralPath 'D:\\\\Kuliah\\\\3KA31\\\\\\\Administrasi & Jadwal\ABSENSI 3KA31.xlsx' -Force | Konfirmasi hapus permanen berkas ke Recycle Bin
+[Batalkan] | secondary | chat:Batalkan penghapusan berkas | Batal
+:::
+
 1. Jika menyajikan statistik / rekapitulasi jumlah berkas, gunakan blok widget :::stats-grid:
 :::stats-grid
 Total Berkas Perkuliahan | 127 | D:\\Kuliah terverifikasi | #1f2937
@@ -508,6 +534,22 @@ Semester 3KA31 | 22 | 17.3% materi perkuliahan | #d97706
 - Setelah user membalas dengan konfirmasi eksplisit ('ya', 'ya hapus', dll), barulah eksekusi penghapusan dengan menambahkan confirmed=True dalam args safe_delete."""
 
         current_prompt = f"Permintaan Pengguna: {user_prompt}"
+        # Smart Confirmation Resolver: If user confirms deletion, detect target file from dialogue history
+        is_confirmation = any(w in user_prompt.lower().strip() for w in ['ya hapus', 'ya, hapus', 'konfirmasi', 'hapus sekarang', 'yes delete', 'setuju hapus', 'ya'])
+        if is_confirmation and dialogue_history:
+            last_assistant_msg = ""
+            for msg in reversed(dialogue_history):
+                if msg.get('role') == 'assistant':
+                    last_assistant_msg = msg.get('content', '')
+                    break
+            # Look for mentioned file path or filename in last assistant message
+            found_paths = re.findall(r'[a-zA-Z]:\\[^\s\n\r"\'\`<>|*?]+', last_assistant_msg)
+            found_files = re.findall(r'([a-zA-Z0-9_\-\s]+\.(?:xlsx|docx|pdf|txt|py|zip|rar|pptx))', last_assistant_msg, re.IGNORECASE)
+            if found_paths:
+                current_prompt += f"\n[SISTEM DETEKSI KONFIRMASI]: Pengguna mengkonfirmasi tindakan penghapusan untuk path: '{found_paths[0]}'. Segera eksekusi safe_delete atau powershell_exec Remove-Item untuk berkas ini dengan confirmed=True!"
+            elif found_files:
+                current_prompt += f"\n[SISTEM DETEKSI KONFIRMASI]: Pengguna mengkonfirmasi tindakan penghapusan untuk berkas: '{found_files[0]}'. Cari dan hapus berkas ini sekarang dengan confirmed=True!"
+
         if mentioned_items:
             current_prompt += f"\nTarget Mentioned: {', '.join(mentioned_items)}"
 
@@ -519,7 +561,7 @@ Semester 3KA31 | 22 | 17.3% materi perkuliahan | #d97706
             raw_response = self.ai_engine.call_llm(full_prompt, system_instruction=system_instruction, model_override=model_override, provider_override=provider_override)
             if not raw_response or raw_response == 'LOCAL_HEURISTIC_MODE':
                 # Graceful switch to local heuristic
-                res = self._run_local_autonomous_agent(user_prompt, current_path, mentioned_items, resolved_mentions)
+                res = self._run_local_autonomous_agent(user_prompt, current_path, mentioned_items, resolved_mentions, dialogue_history=history)
                 res['reply'] = strip_emojis(res.get('reply', ''))
                 return res
 
@@ -895,3 +937,5 @@ Apa yang ingin Anda kerjakan selanjutnya?"""
             'events': events,
             'actions_taken': actions_taken
         }
+
+

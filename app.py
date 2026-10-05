@@ -291,6 +291,7 @@ class ChatRequest(BaseModel):
     mentioned_items: Optional[List[str]] = []
     model_override: Optional[str] = None
     provider_override: Optional[str] = None
+    history: Optional[List[dict]] = []
 
 @app.post("/api/ai/chat")
 def api_chat(req: ChatRequest):
@@ -299,9 +300,22 @@ def api_chat(req: ChatRequest):
         current_path=req.current_path,
         mentioned_items=req.mentioned_items,
         model_override=req.model_override,
-        provider_override=req.provider_override
+        provider_override=req.provider_override,
+        history=req.history
     )
     return res
+
+class ActionExecuteRequest(BaseModel):
+    command: str
+
+@app.post("/api/action/execute")
+def api_action_execute(req: ActionExecuteRequest):
+    """Executes verified action (e.g. PowerShell command) from semantic chat button."""
+    cmd = req.command.strip()
+    if not cmd:
+        return {"success": False, "error": "Command is empty"}
+    res = agent_runner.toolbox.powershell_exec(cmd)
+    return {"success": True, "output": res}
 
 @app.get("/api/storage/details")
 def api_storage_details():

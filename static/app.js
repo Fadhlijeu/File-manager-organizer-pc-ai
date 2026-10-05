@@ -1,4 +1,115 @@
 
+// Semantic Action Buttons Builder in Chat
+function renderCustomActionButtonsFromText(body) {
+  const lines = body.trim().split('\n');
+  const buttons = [];
+
+  lines.forEach(line => {
+    const s = line.trim();
+    if (!s) return;
+    const parts = s.split('|').map(p => p.trim());
+    if (parts.length >= 2) {
+      let rawLabel = parts[0].replace(/^\[|\]$/g, '').trim();
+      let type = parts[1].toLowerCase().trim() || 'primary';
+      let actionStr = parts[2] || '';
+      let desc = parts[3] || '';
+
+      let actionType = 'chat';
+      let actionPayload = actionStr;
+
+      if (actionStr.startsWith('powershell:')) {
+        actionType = 'powershell';
+        actionPayload = actionStr.slice(11).trim();
+      } else if (actionStr.startsWith('chat:')) {
+        actionType = 'chat';
+        actionPayload = actionStr.slice(5).trim();
+      } else if (actionStr.startsWith('crud_delete:')) {
+        actionType = 'crud_delete';
+        actionPayload = actionStr.slice(12).trim();
+      }
+
+      const iconSvg = actionType === 'powershell' 
+        ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>'
+        : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>';
+
+      buttons.push(`
+        <button type="button" class="custom-ui-action-btn ${escapeHtml(type)}" 
+                data-type="${escapeHtml(actionType)}" 
+                data-payload="${escapeHtml(actionPayload)}" 
+                onclick="handleSemanticActionClick(this)"
+                title="${escapeHtml(desc || rawLabel)}">
+          ${iconSvg}
+          <span>${escapeHtml(rawLabel)}</span>
+        </button>
+      `);
+    }
+  });
+
+  return `<div class="custom-ui-action-group">${buttons.join('')}</div>`;
+}
+
+async function handleSemanticActionClick(btn) {
+  const actionType = btn.getAttribute('data-type');
+  const actionPayload = btn.getAttribute('data-payload');
+
+  btn.disabled = true;
+  const originalHtml = btn.innerHTML;
+  btn.innerHTML = `<span style="font-size: 11px;">Mengeksekusi...</span>`;
+
+  if (actionType === 'powershell') {
+    try {
+      const res = await fetch('/api/action/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: actionPayload })
+      });
+      const data = await res.json();
+      if (data.success) {
+        btn.className = 'custom-ui-action-btn executed';
+        btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Selesai Dijalankan`;
+        showToast("Perintah PowerShell berhasil dieksekusi!");
+        refreshCurrentFolder();
+        fetchStorageDetails();
+      } else {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+        showToast(`Gagal: ${data.error || 'Terjadi kesalahan eksekusi'}`);
+      }
+    } catch (e) {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+      showToast(`Error: ${e.message}`);
+    }
+  } else if (actionType === 'crud_delete') {
+    try {
+      const res = await fetch('/api/crud/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: actionPayload, force: true })
+      });
+      const data = await res.json();
+      if (data.success) {
+        btn.className = 'custom-ui-action-btn executed';
+        btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Berhasil Dihapus`;
+        showToast(`Berkas berhasil dihapus ke Recycle Bin!`);
+        refreshCurrentFolder();
+      } else {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+        showToast(`Gagal hapus: ${data.error}`);
+      }
+    } catch (e) {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+      showToast(`Error: ${e.message}`);
+    }
+  } else if (actionType === 'chat') {
+    btn.className = 'custom-ui-action-btn executed';
+    sendQuickPrompt(actionPayload);
+  }
+}
+
+
 // Marked.js Configuration: disable 4-space indented code blocks so markdown lists and HTML never become code blocks
 if (typeof marked !== 'undefined' && marked.use) {
   try {
@@ -40,6 +151,7 @@ let allQueueItems = [];
 let selectedQueueIds = new Set();
 let ws = null;
 let liveAgentPhaseTimer = null;
+let chatHistoryTurns = [];
 
 // Global Custom User Models List
 let savedCustomModels = [];
@@ -153,6 +265,8 @@ const PROVIDER_METADATA = {
 
 // Initialize Application
 document.addEventListener("DOMContentLoaded", () => {
+  populateModelSelects();
+  renderModelsManagementTable();
   initLucide();
   initWebSocket();
   navigatePath(currentPath);
@@ -633,16 +747,16 @@ function selectProviderCard(provKey, triggerToast = true) {
   const card = document.getElementById(`provCard-${provKey}`);
   if (card) card.classList.add('active');
 
-  // Update models dropdown
-  const modelSelect = document.getElementById('settingsModelSelect');
-  const customInput = document.getElementById('customModelInput');
-  const meta = PROVIDER_METADATA[provKey] || PROVIDER_METADATA.gemini;
-  
-  if (modelSelect) {
-    modelSelect.innerHTML = meta.models.map(m => `<option value="${m.id}">${m.label}</option>`).join('');
-    const curModel = providersConfig[provKey]?.model || meta.defaultModel;
-    modelSelect.value = curModel;
+  const meta = PROVIDER_METADATA[provKey] || PROVIDER_METADATA.gemini || {};
+
+  // Update active model for selected provider if available
+  const matchModel = userModelsRegistry.find(m => m.provider === provKey);
+  if (matchModel) {
+    activeModel = matchModel.id;
   }
+  populateModelSelects();
+  renderModelsManagementTable();
+  const customInput = document.getElementById('customModelInput');
   if (customInput) customInput.value = '';
 
   // Update API Key input
@@ -1214,6 +1328,9 @@ async function handleChatSubmit(e) {
   input.value = '';
   closeMentionPopup();
 
+  // Record user turn in dialogue history
+  chatHistoryTurns.push({ role: 'user', content: fullMessage });
+
   // Extract mention tokens
   const mentionMatches = fullMessage.match(/@(file|folder|path):(?:"([^"]+)"|([^\s,]+))/gi) || [];
   const submittedMentions = mentionMatches.map(m => m.trim());
@@ -1227,7 +1344,8 @@ async function handleChatSubmit(e) {
         current_path: currentPath,
         mentioned_items: submittedMentions,
         model_override: activeModel,
-        provider_override: (userModelsRegistry.find(m => m.id === activeModel) || {}).provider || activeProvider
+        provider_override: (userModelsRegistry.find(m => m.id === activeModel) || {}).provider || activeProvider,
+        history: chatHistoryTurns.slice(-8)
       })
     });
     const data = await res.json();
@@ -1242,6 +1360,7 @@ async function handleChatSubmit(e) {
 
     // 2. Prepare markdown content & custom widgets
     const finalMd = data.reply || "Tugas selesai.";
+    chatHistoryTurns.push({ role: 'assistant', content: finalMd });
     let renderedMd = renderMarkdown(finalMd);
     renderedMd = formatMentionTagsInHtml(renderedMd);
 
@@ -1343,6 +1462,11 @@ function renderMarkdown(raw) {
     return `\n\n${token}\n\n`;
   }
 
+  // Stash :::action-btn widget (Semantic interactive buttons)
+  text = text.replace(/:::action-btn\s*([\s\S]*?)\s*:::/gi, (match, body) => {
+    return stashWidget(renderCustomActionButtonsFromText(body));
+  });
+
   // Stash :::stats-grid widget
   text = text.replace(/:::stats-grid\s*([\s\S]*?)\s*:::/gi, (match, body) => {
     return stashWidget(renderCustomStatsGridFromText(body));
@@ -1414,35 +1538,103 @@ function renderCustomStatsGridFromText(body) {
   return `<div class="custom-ui-metric-grid">${cards.join('')}</div>`;
 }
 
-// Interactive File Tree Renderer (Zero Indentation HTML)
+// Interactive Hierarchical File Tree Renderer with Functional Collapse / Expand Dropdown
 function renderCustomFileTreeFromText(body) {
   const lines = body.trim().split('\n');
-  const items = [];
+  const stack = [{ indent: -1, children: [] }];
   let fileCount = 0;
 
   lines.forEach(line => {
+    if (!line.trim()) return;
     const indent = line.length - line.trimStart().length;
     const s = line.trim();
-    if (!s) return;
 
-    if (s.startsWith('[DIR]')) {
-      const dname = escapeHtml(s.slice(5).trim());
-      items.push(`<div class="tree-folder-group"><div class="tree-folder-title" style="margin-left: ${Math.min(indent * 4, 32)}px;" onclick="toggleTreeGroup(this)"><svg class="tree-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transition: transform 0.15s ease;"><polyline points="9 18 15 12 9 6"/></svg><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg><span>${dname}</span></div></div>`);
+    const isDir = s.startsWith('[DIR]');
+    let name = '';
+    let size = '';
+
+    if (isDir) {
+      name = s.slice(5).trim();
     } else {
       let finfo = s.startsWith('[FILE]') ? s.slice(6).trim() : s.replace(/^[-*]\s*/, '').trim();
       let parts = finfo.split('|');
-      let fname = parts[0].trim();
-      let fsize = parts[1] ? parts[1].trim() : '';
+      name = parts[0].trim();
+      size = parts[1] ? parts[1].trim() : '';
       fileCount++;
+    }
 
-      let ext = fname.includes('.') ? fname.split('.').pop().toLowerCase() : 'file';
-      let badgeClass = ['xlsx', 'pdf', 'docx', 'py', 'zip', 'txt'].includes(ext) ? ext : 'other';
+    const node = { indent, isDir, name, size, children: [] };
 
-      items.push(`<div class="tree-file-item" style="margin-left: ${Math.min((indent + 2) * 4, 36)}px;"><span class="file-ext-badge ${badgeClass}">${escapeHtml(ext)}</span><span class="file-name" title="${escapeHtml(fname)}">${escapeHtml(fname)}</span>${fsize ? `<span class="file-size">${escapeHtml(fsize)}</span>` : ''}<div class="file-actions"><button type="button" class="btn-tree-action" onclick="copyFilePath('${escapeHtml(fname.replace(/'/g, "\\'"))}')" title="Salin nama berkas"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button><button type="button" class="btn-tree-action" onclick="insertTokenIntoChat('@file:\\"${escapeHtml(fname.replace(/"/g, '\\"'))}\\" ')" title="Tandai target mention @file">@file</button></div></div>`);
+    // Pop stack until parent has smaller indent
+    while (stack.length > 1 && stack[stack.length - 1].indent >= indent) {
+      stack.pop();
+    }
+    stack[stack.length - 1].children.push(node);
+    if (isDir) {
+      stack.push(node);
     }
   });
 
-  return `<div class="custom-ui-tree"><div class="custom-ui-tree-header"><div class="tree-header-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg><span>Struktur Direktori Berkas</span></div><span class="tree-count-badge">${fileCount} berkas ditampilkan</span></div><div class="custom-ui-tree-body">${items.join('')}</div></div>`;
+  function countDescendants(node) {
+    let count = 0;
+    node.children.forEach(ch => {
+      if (ch.isDir) count += countDescendants(ch);
+      else count++;
+    });
+    return count;
+  }
+
+  function renderTreeNodes(nodes, depth) {
+    let out = '';
+    nodes.forEach(node => {
+      if (node.isDir) {
+        const subCount = countDescendants(node);
+        out += `<div class="tree-folder-group" data-open="true">` +
+               `<div class="tree-folder-title" onclick="toggleTreeGroup(this)">` +
+               `<svg class="tree-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transform: rotate(90deg); transition: transform 0.15s ease;"><polyline points="9 18 15 12 9 6"/></svg>` +
+               `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>` +
+               `<span>${escapeHtml(node.name)}</span>` +
+               `<span style="font-size: 10px; color: var(--color-muted); margin-left: 4px;">(${subCount} berkas)</span>` +
+               `</div>` +
+               `<div class="tree-folder-children" style="display: block;">` +
+               renderTreeNodes(node.children, depth + 1) +
+               `</div></div>`;
+      } else {
+        let ext = node.name.includes('.') ? node.name.split('.').pop().toLowerCase() : 'file';
+        let badgeClass = ['xlsx', 'pdf', 'docx', 'py', 'zip', 'txt'].includes(ext) ? ext : 'other';
+        out += `<div class="tree-file-item">` +
+               `<span class="file-ext-badge ${badgeClass}">${escapeHtml(ext)}</span>` +
+               `<span class="file-name" title="${escapeHtml(node.name)}">${escapeHtml(node.name)}</span>` +
+               (node.size ? `<span class="file-size">${escapeHtml(node.size)}</span>` : '') +
+               `<div class="file-actions">` +
+               `<button type="button" class="btn-tree-action" onclick="copyFilePath('${escapeHtml(node.name.replace(/'/g, "\\'"))}')" title="Salin nama berkas"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` +
+               `<button type="button" class="btn-tree-action" onclick="insertTokenIntoChat('@file:\\"${escapeHtml(node.name.replace(/"/g, '\\"'))}\\" ')" title="Tandai target mention @file">@file</button>` +
+               `</div></div>`;
+      }
+    });
+    return out;
+  }
+
+  const rootChildrenHtml = renderTreeNodes(stack[0].children, 0);
+  return `<div class="custom-ui-tree"><div class="custom-ui-tree-header"><div class="tree-header-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg><span>Struktur Direktori Berkas</span></div><span class="tree-count-badge">${fileCount} berkas ditampilkan</span></div><div class="custom-ui-tree-body">${rootChildrenHtml}</div></div>`;
+}
+
+function toggleTreeGroup(headerEl) {
+  const group = headerEl.closest('.tree-folder-group');
+  if (!group) return;
+  const children = group.querySelector(':scope > .tree-folder-children');
+  const chevron = headerEl.querySelector('.tree-chevron');
+  const isOpen = group.getAttribute('data-open') !== 'false';
+
+  if (isOpen) {
+    group.setAttribute('data-open', 'false');
+    if (children) children.style.display = 'none';
+    if (chevron) chevron.style.transform = 'rotate(0deg)';
+  } else {
+    group.setAttribute('data-open', 'true');
+    if (children) children.style.display = 'block';
+    if (chevron) chevron.style.transform = 'rotate(90deg)';
+  }
 }
 
 
@@ -1931,7 +2123,7 @@ function streamTextToElement(element, fullHtml, onComplete, scrollContainer) {
 
   // Smart Atomic Tokenizer: leaves custom UI widgets intact so DOM tags are never mangled
   const tokens = [];
-  const tagRegex = /(<div class="custom-ui-(?:metric-grid|tree)"[\s\S]*?<\/div>\s*<\/div>|<div class="code-block-container"[\s\S]*?<\/div>|<details class="agent-accordion"[\s\S]*?<\/details>|<[^>]+>|[^<>\s]+|\s+)/g;
+  const tagRegex = /(<div class="custom-ui-(?:metric-grid|tree|action-group)"[\s\S]*?<\/div>\s*<\/div>|<div class="code-block-container"[\s\S]*?<\/div>|<details class="agent-accordion"[\s\S]*?<\/details>|<[^>]+>|[^<>\s]+|\s+)/g;
   let m;
   while ((m = tagRegex.exec(fullHtml)) !== null) {
     tokens.push(m[0]);
@@ -1983,14 +2175,7 @@ function copyFilePath(path) {
   });
 }
 
-function toggleTreeGroup(headerEl) {
-  const group = headerEl.closest('.tree-folder-group');
-  const chevron = headerEl.querySelector('.tree-chevron');
-  if (chevron) {
-    const isRot = chevron.style.transform === 'rotate(90deg)';
-    chevron.style.transform = isRot ? 'rotate(0deg)' : 'rotate(90deg)';
-  }
-}
+
 
 
 /* ============================================================ */
