@@ -403,6 +403,7 @@ a {
 /* Workspace Scroll Area */
 .workspace-content {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: var(--space-4);
   display: flex;
@@ -420,6 +421,8 @@ a {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  min-height: 0;
+  flex: 1;
 }
 
 @keyframes fadeIn {
@@ -442,6 +445,8 @@ a {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-inner);
   overflow: hidden;
+  flex: 1;
+  min-height: 0;
 }
 
 /* Header inside Panel Frame */
@@ -1359,8 +1364,8 @@ a {
 
 /* Chat Bubbles */
 .chat-history-box {
-  min-height: 260px;
-  max-height: 480px;
+  flex: 1;
+  min-height: 200px;
   overflow-y: auto;
   padding: var(--space-4);
   display: flex;
@@ -1463,3 +1468,55 @@ a {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+
+/* ============================================================ */
+/* AI ASSISTANT FULL-HEIGHT LAYOUT FIX                          */
+/* Makes chat history box fill all available vertical space     */
+/* ============================================================ */
+
+/* When AI Assistant tab is active, make it fill workspace */
+#view-home.active {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Panel frame in AI section: stretch full */
+#view-home .panel-frame {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Panel surface: fill frame interior */
+#view-home .panel-surface {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The inner flex container holding chat + input */
+#view-home .panel-surface > div {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Chat history fills remaining height */
+#view-home .chat-history-box {
+  flex: 1;
+  min-height: 200px;
+  max-height: none;
+  overflow-y: auto;
+}
+
+/* Quick prompts and input area should not shrink */
+#view-home .mention-quick-pills,
+#view-home .chat-input-clean-bar {
+  flex-shrink: 0;
+}
+
