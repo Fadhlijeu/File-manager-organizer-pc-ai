@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OmniFile AI — Neutral Support Dashboard & Autonomous File Manager</title>
+  
+  <!-- Inter Font via Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <!-- Marked.js for fast Markdown & LaTeX formatting -->
+  <script src="marked.min.js"></script>
+  
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <div class="app-shell">
+    
+    <!-- ============================================== -->
+    <!-- SIDEBAR NAVIGATION (250px)                     -->
+    <!-- ============================================== -->
+    <aside class="app-sidebar" id="appSidebar">
+      <div>
+        <!-- Brand Header -->
+        <div class="brand-row">
+          <div class="brand-left">
+            <div class="brand-logo-box">O</div>
+            <span class="brand-text">OmniFile AI</span>
+          </div>
+          <button class="brand-collapse-btn" onclick="toggleSidebar()" title="Collapse sidebar" aria-label="Collapse sidebar">
+            <i data-lucide="panel-left-close"></i>
+          </button>
+        </div>
+
+        <!-- Search Box -->
+        <div class="sidebar-search-box">
+          <span class="sidebar-search-icon"><i data-lucide="search"></i></span>
+          <input type="text" id="globalSearchInput" placeholder="Cari file, folder, tugas..." onkeydown="handleGlobalSearchKey(event)">
+          <span class="sidebar-search-kbd">⌘K</span>
+        </div>
+
+        <!-- Group: Main Navigation -->
+        <div class="nav-group-title">Main Navigation</div>
+        <ul class="sidebar-nav-list">
+          <li>
+            <button class="sidebar-nav-item active" id="nav-overview" onclick="switchNav('overview')">
+              <span class="nav-item-left">
+                <i data-lucide="layout-dashboard"></i> Overview
+              </span>
+            </button>
+          </li>
+          <li>
+            <button class="sidebar-nav-item" id="nav-folders" onclick="switchNav('folders')">
+              <span class="nav-item-left">
+                <i data-lucide="folder"></i> Explorer
+              </span>
+            </button>
+          </li>
+          <li>
+            <button class="sidebar-nav-item" id="nav-queue" onclick="switchNav('queue')">
+              <span class="nav-item-left">
+                <i data-lucide="inbox"></i> Incoming Queue
+              </span>
+              <span class="sidebar-badge highlight" id="sidebarQueueBadge" style="display: none;">0</span>
+            </button>
+          </li>
+          <li>
+            <button class="sidebar-nav-item" id="nav-home" onclick="switchNav('home')">
+              <span class="nav-item-left">
+                <i data-lucide="bot"></i> AI Assistant
+              </span>
+            </button>
+          </li>
+          <li>
+            <button class="sidebar-nav-item" id="nav-clean" onclick="switchNav('clean')">
+              <span class="nav-item-left">
+                <i data-lucide="hard-drive"></i> Disk & Storage
+              </span>
+            </button>
+          </li>
+          <li>
+            <button class="sidebar-nav-item" id="nav-settings" onclick="switchNav('settings')">
+              <span class="nav-item-left">
+                <i data-lucide="sliders"></i> Pengaturan
+              </span>
+            </button>
+          </li>
+        </ul>
+
+        <!-- Group: Spaces & Partisi -->
+        <div class="nav-group-title">Spaces & Partisi</div>
+        <ul class="sidebar-nav-list">
+          <li>
+            <button class="sidebar-nav-item" data-space-path="D:\" onclick="navigatePath('D:\\')">
+              <span class="nav-item-left"><i data-lucide="hard-drive"></i> D:\ Root</span>
+            </button>
+          </li>
+          <li>
+            <button class="sidebar-nav-item" data-space-path="D:\Kuliah" onclick="navigatePath('D:\\Kuliah')">
+              <span class="nav-item-left"><i data-lucide="graduation-cap"></i> D:\Kuliah (2KA/3KA)</span>
+            </button>
+          </li>
+          <li>
+            <button class="sidebar-nav-item" data-space-path="D:\DOWNLOAD" onclick="navigatePath('D:\\DOWNLOAD')">
+              <span class="nav-item-left"><i data-lucide="download"></i> D:\DOWNLOAD</span>
+            </button>
+          </li>
+          <li>
+            <button class="sidebar-nav-item" data-space-path="C:\Users\fadhl\OneDrive\Documents" onclick="navigatePath('C:\\Users\\fadhl\\OneDrive\\Documents')">
+              <span class="nav-item-left"><i data-lucide="file-text"></i> OneDrive Documents</span>
+            </button>
+          </li>
+          <li>
+            <button class="sidebar-nav-item" data-space-path="D:\PROJECT" onclick="navigatePath('D:\\PROJECT')">
+              <span class="nav-item-left"><i data-lucide="code-2"></i> D:\PROJECT</span>
+            </button>
+          </li>
+          <li>
+            <button class="sidebar-nav-item" data-space-path="D:\Game" onclick="navigatePath('D:\\Game')">
+              <span class="nav-item-left"><i data-lucide="gamepad-2"></i> D:\Game</span>
+            </button>
+          </li>
+        </ul>
+      </div>
+
+      <!-- User Profile Card -->
+      <div class="user-profile-card">
+        <div class="user-profile-info">
+          <div class="user-avatar">MF</div>
+          <div>
+            <div class="user-name">Muhammad Fadhli</div>
+            <div class="user-role">System Operator • 3KA31</div>
+          </div>
+        </div>
+        <button class="btn-clean icon-only" onclick="switchNav('settings')" title="Buka Pengaturan" style="border: none;">
+          <i data-lucide="settings-2"></i>
+        </button>
+      </div>
+    </aside>
+
+    <!-- ============================================== -->
+    <!-- MAIN WORKSPACE                                 -->
+    <!-- ============================================== -->
+    <main class="app-main">
+      
+      <!-- Topbar Header (52px) -->
+      <header class="workspace-topbar">
+        <div class="topbar-left">
+          <button class="btn-clean icon-only" onclick="toggleSidebar()" title="Toggle sidebar">
+            <i data-lucide="menu"></i>
+          </button>
+          <div class="topbar-breadcrumb">
+            <span class="crumb-dim">OmniFile AI</span>
+            <span>/</span>
+            <span class="crumb-active" id="activeBreadcrumbSegment">Overview</span>
+          </div>
+        </div>
+        <div class="topbar-right">
+          <span class="status-pill-clean">
+            <span class="status-dot-pulse"></span>
+            <span>Kernel Watchdog Active</span>
+          </span>
+          <button class="btn-clean" onclick="triggerManualScan()" title="Scan ulang direktori">
+            <i data-lucide="refresh-cw"></i>
+            <span>Scan Ulang</span>
+          </button>
+          <button class="btn-clean dark" onclick="switchNav('settings')" title="Konfigurasi Model & Provider">
+            <i data-lucide="sliders"></i>
+            <span>Model & Provider</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Scrollable Workspace Content -->
+      <div class="workspace-content">
+
+        <!-- ============================================== -->
+        <!-- TAB 1: OVERVIEW DASHBOARD                      -->
+        <!-- ============================================== -->
+        <section class="tab-view active" id="view-overview">
+          
+          <!-- Welcome Row -->
+          <div class="welcome-banner-row">
+            <div class="welcome-title-wrap">
+              <h1>Hello, Muhammad Fadhli</h1>
+              <p>Autonomous File Manager & PC Organizer • Partisi D:\ & OneDrive Watcher</p>
+            </div>
+            <div class="welcome-actions">
+              <label class="time-range-select-wrap">
+                <i data-lucide="calendar" style="margin-right: 6px; width: 13px; height: 13px;"></i>
+                <select id="overviewTimeRange" onchange="changeOverviewRange(this.value)">
+                  <option value="week">Last week</option>
+                  <option value="month">Last month</option>
+                  <option value="quarter">Last quarter</option>
+                </select>
+              </label>
+              <button class="btn-clean icon-only" onclick="refreshOverviewData()" title="Muat ulang data">
+                <i data-lucide="rotate-cw"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- 3 KPI Cards (Panel Berbingkai 140px) -->
+          <div class="kpi-cards-grid">
+            
+            <!-- KPI 1 -->
+            <div class="panel-frame kpi-card-frame">
+              <div class="frame-header-strip">
+                <span>TOTAL BERKAS TERKELOLA</span>
+                <i data-lucide="folder-check" style="width: 13px; height: 13px;"></i>
+              </div>
+              <div class="panel-surface kpi-surface-content">
+                <div class="kpi-metric-block">
+                  <div class="kpi-number tabular-nums" id="kpiTotalFiles">127</div>
+                  <div class="kpi-delta-row">
+                    <span class="kpi-delta-pill positive" id="kpiDeltaFiles">
+                      <i data-lucide="trending-up" style="width: 11px; height: 11px;"></i> +12.4%
+                    </span>
+                    <span class="kpi-delta-sub">vs last week</span>
+                  </div>
+                </div>
+                <svg class="kpi-sparkline-svg" viewBox="0 0 90 40">
+                  <polygon points="0,35 15,28 30,30 45,18 60,22 75,10 90,6 90,40 0,40" fill="#009b72" opacity="0.08" />
+                  <polyline points="0,35 15,28 30,30 45,18 60,22 75,10 90,6" fill="none" stroke="#009b72" stroke-width="1.5" />
+                </svg>
+              </div>
+            </div>
+
+            <!-- KPI 2 -->
+            <div class="panel-frame kpi-card-frame">
+              <div class="frame-header-strip">
+                <span>INCOMING QUEUE (STAGING)</span>
+                <i data-lucide="inbox" style="width: 13px; height: 13px;"></i>
+              </div>
+              <div class="panel-surface kpi-surface-content">
+                <div class="kpi-metric-block">
+                  <div class="kpi-number tabular-nums" id="kpiQueueCount">1 Pending</div>
+                  <div class="kpi-delta-row">
+                    <span class="kpi-delta-pill positive">
+                      <i data-lucide="check-circle-2" style="width: 11px; height: 11px;"></i> 98.4%
+                    </span>
+                    <span class="kpi-delta-sub">auto-organized</span>
+                  </div>
+                </div>
+                <svg class="kpi-sparkline-svg" viewBox="0 0 90 40">
+                  <polygon points="0,30 18,22 36,25 54,12 72,15 90,8 90,40 0,40" fill="#4268ff" opacity="0.08" />
+                  <polyline points="0,30 18,22 36,25 54,12 72,15 90,8" fill="none" stroke="#4268ff" stroke-width="1.5" />
+                </svg>
+              </div>
+            </div>
+
+            <!-- KPI 3 -->
+            <div class="panel-frame kpi-card-frame">
+              <div class="frame-header-strip">
+                <span>RUANG BEBAS PARTISI D:\</span>
+                <i data-lucide="hard-drive" style="width: 13px; height: 13px;"></i>
+              </div>
+              <div class="panel-surface kpi-surface-content">
+                <div class="kpi-metric-block">
+                  <div class="kpi-number tabular-nums" id="kpiStorageFree">212.8 GB</div>
+                  <div class="kpi-delta-row">
+                    <span class="kpi-delta-pill" style="color: var(--color-violet);">
+                      <i data-lucide="pie-chart" style="width: 11px; height: 11px;"></i> 31.9%
+                    </span>
+                    <span class="kpi-delta-sub">terpakai (99.7 GB)</span>
+                  </div>
+                </div>
+                <svg class="kpi-sparkline-svg" viewBox="0 0 90 40">
+                  <polygon points="0,20 20,22 40,25 60,26 80,28 90,29 90,40 0,40" fill="#8b5cf6" opacity="0.08" />
+                  <polyline points="0,20 20,22 40,25 60,26 80,28 90,29" fill="none" stroke="#8b5cf6" stroke-width="1.5" />
+                </svg>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Analytics Row (Bar Chart 15 Bars + Latest Updates Timeline) -->
+          <div class="analytics-two-col-grid">
+            
+            <!-- Bar Chart Card -->
+            <div class="panel-frame">
+              <div class="frame-header-strip">
+                <span>AKTIVITAS OPERASI BERKAS & I/O</span>
+                <span style="font-size: 10.5px; color: var(--color-muted);">15 Periode (Setengah Hari)</span>
+              </div>
+              <div class="panel-surface chart-panel-surface">
+                <div class="chart-top-summary">
+                  <div>
+                    <div class="chart-big-number tabular-nums" id="chartTotalEvents">482</div>
+                    <div style="font-size: 11.5px; color: var(--color-muted);">Total event I/O & pengorganisasian minggu ini</div>
+                  </div>
+                  <div class="chart-legend-row">
+                    <span><strong style="color: var(--color-text);">312</strong> Pindah</span>
+                    <span><strong style="color: var(--color-text);">126</strong> Rename</span>
+                    <span><strong style="color: var(--color-text);">44</strong> AI Scan</span>
+                  </div>
+                </div>
+
+                <!-- 15 Bars Container with custom --bar-height -->
+                <div class="volume-chart-container" id="volumeChartContainer" role="group" aria-label="Activity Volume Trend">
+                  <!-- Bars rendered dynamically via JavaScript -->
+                </div>
+                <div class="chart-x-labels">
+                  <span>Mon AM</span>
+                  <span>Tue</span>
+                  <span>Wed</span>
+                  <span>Thu</span>
+                  <span>Fri</span>
+                  <span>Sat</span>
+                  <span>Sun PM</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Latest Updates Timeline -->
+            <div class="panel-frame">
+              <div class="frame-header-strip">
+                <span>LATEST UPDATES</span>
+                <span id="activityCountHeader" style="font-size: 10.5px; color: var(--color-muted);">8 event hari ini</span>
+              </div>
+              <div class="panel-surface timeline-surface">
+                <div class="timeline-filter-tabs">
+                  <button class="timeline-tab-btn active" onclick="filterTimeline('today')">Today</button>
+                  <button class="timeline-tab-btn" onclick="filterTimeline('yesterday')">Yesterday</button>
+                  <button class="timeline-tab-btn" onclick="filterTimeline('week')">This week</button>
+                </div>
+                <div class="timeline-list" id="timelineListContainer">
+                  <!-- Injected via JavaScript -->
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Bottom Row: Table Panel -->
+          <div class="panel-frame">
+            <div class="frame-header-strip">
+              <span>ANTREAN STAGING & PEMANTAUAN BERKAS MASUK</span>
+              <button class="btn-clean" onclick="executeAllQueueWithAI()" style="height: 24px; padding: 0 8px; font-size: 11px;">
+                <i data-lucide="zap" style="width: 11px; height: 11px;"></i> Eksekusi Semua
+              </button>
+            </div>
+            <div class="panel-surface table-panel-surface">
+              <div class="table-toolbar">
+                <div style="position: relative;">
+                  <i data-lucide="search" style="position: absolute; left: 8px; top: 8px; width: 13px; height: 13px; color: var(--color-muted);"></i>
+                  <input type="text" class="table-search-input" id="queueTableSearch" placeholder="Cari dalam antrean..." oninput="filterQueueTable(this.value)">
+                </div>
+                <div style="display: flex; gap: var(--space-2);">
+                  <button class="btn-clean" onclick="exportQueueCSV()">
+                    <i data-lucide="download"></i> Export CSV
+                  </button>
+                </div>
+              </div>
+
+              <div class="table-wrap">
+                <table class="data-table-clean" id="queueDataTable">
+                  <thead>
+                    <tr>
+                      <th style="width: 32px;"><input type="checkbox" id="selectAllQueue" onchange="toggleSelectAllQueue(this.checked)"></th>
+                      <th class="sortable" onclick="sortQueueTable('name')">Nama Berkas</th>
+                      <th class="sortable" onclick="sortQueueTable('category')">Rekomendasi / Alokasi</th>
+                      <th class="sortable" onclick="sortQueueTable('size')">Ukuran</th>
+                      <th>Path Asal</th>
+                      <th>Status SLA</th>
+                      <th style="text-align: right;">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody id="queueTableBody">
+                    <!-- Populated by JavaScript -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+        </section>
+
+        <!-- ============================================== -->
+        <!-- TAB 2: EXPLORER                                -->
+        <!-- ============================================== -->
+        <section class="tab-view" id="view-folders">
+          <div class="panel-frame">
+            <div class="frame-header-strip">
+              <span>FILE EXPLORER</span>
+              <span id="folderCounterText" style="font-size: 11px; color: var(--color-muted);">Memuat direktori...</span>
+            </div>
+            <div class="panel-surface">
+              
+              <!-- Toolbar -->
+              <div class="explorer-toolbar">
+                <div style="display: flex; align-items: center; gap: var(--space-2); flex: 1;">
+                  <button class="btn-clean icon-only" onclick="navigateUpFolder()" title="Naik satu tingkat">
+                    <i data-lucide="arrow-up"></i>
+                  </button>
+                  <button class="btn-clean icon-only" onclick="refreshCurrentFolder()" title="Muat ulang direktori">
+                    <i data-lucide="refresh-cw"></i>
+                  </button>
+                  <!-- Breadcrumb with @path button -->
+                  <div id="breadcrumbStrip" style="display: flex; align-items: center; gap: 4px; overflow-x: auto;">
+                    <!-- Injected via JavaScript -->
+                  </div>
+                </div>
+
+                <div style="display: flex; gap: var(--space-2);">
+                  <input type="text" id="filterInput" class="table-search-input" placeholder="Filter folder & berkas..." oninput="filterCurrentView(this.value)">
+                  <button class="btn-clean" onclick="openNewFolderModal()">
+                    <i data-lucide="folder-plus"></i> Folder Baru
+                  </button>
+                  <button class="btn-clean" onclick="openInExplorer()" title="Buka di Windows Explorer">
+                    <i data-lucide="external-link"></i> Explorer
+                  </button>
+                </div>
+              </div>
+
+              <!-- Folders Grid -->
+              <div class="folders-grid-clean" id="foldersGridContainer">
+                <!-- Injected via JavaScript -->
+              </div>
+
+              <!-- Files Table -->
+              <div style="border-top: 1px solid var(--color-border);">
+                <div style="padding: 8px 14px; background-color: var(--color-sidebar); border-bottom: 1px solid var(--color-border); font-size: 11px; font-weight: 600; color: var(--color-secondary);">
+                  BERKAS FISIK DALAM DIREKTORI
+                </div>
+                <div id="filesListContainer">
+                  <!-- Injected via JavaScript -->
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================== -->
+        <!-- TAB 3: INCOMING QUEUE                          -->
+        <!-- ============================================== -->
+        <section class="tab-view" id="view-queue">
+          <div class="panel-frame">
+            <div class="frame-header-strip">
+              <span>INCOMING STAGING QUEUE (WATCHDOG KERNEL)</span>
+              <div style="display: flex; gap: var(--space-2);">
+                <button class="btn-clean" onclick="triggerManualScan()">
+                  <i data-lucide="refresh-cw"></i> Scan Ulang
+                </button>
+                <button class="btn-clean dark" onclick="executeAllQueueWithAI()">
+                  <i data-lucide="zap"></i> Eksekusi & Pindahkan Semua
+                </button>
+              </div>
+            </div>
+            <div class="panel-surface" style="padding: var(--space-4);">
+              <div class="queue-list-clean" id="queueItemsList">
+                <!-- Injected via JavaScript -->
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================== -->
+        <!-- TAB 4: AI ASSISTANT (AUTONOMOUS REACT AGENT)   -->
+        <!-- ============================================== -->
+        <section class="tab-view" id="view-home">
+          <div class="panel-frame" style="height: 100%;">
+            <div class="frame-header-strip">
+              <div style="display: flex; align-items: center; gap: var(--space-2);">
+                <span>AUTONOMOUS FILE MANAGER AGENT</span>
+                <span class="status-pill success" style="font-size: 10px;">Ready</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: var(--space-2);">
+                <!-- Model Dropdown -->
+                <select id="aiModelSelect" class="time-range-select-wrap" style="height: 26px; font-size: 11px;" onchange="changeActiveModel(this.value)">
+                  <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite (Google Default)</option>
+                  <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                  <option value="openrouter/claude-3.5-sonnet">OpenRouter: Claude 3.5 Sonnet</option>
+                  <option value="openrouter/llama-3.3-70b">OpenRouter: Llama 3.3 70B</option>
+                  <option value="openai/gpt-4o-mini">OpenAI: GPT-4o Mini</option>
+                  <option value="local-heuristic">Agen Mandiri Offline (PowerShell Host)</option>
+                </select>
+                <button class="btn-clean" onclick="clearChatHistory()" style="height: 26px; padding: 0 8px; font-size: 11px;">
+                  <i data-lucide="trash-2" style="width: 12px; height: 12px;"></i> Bersihkan
+                </button>
+              </div>
+            </div>
+
+            <div class="panel-surface" style="padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3);">
+              
+              <!-- Chat Stream Box -->
+              <div class="chat-history-box" id="chatHistoryBox">
+                <div class="chat-bubble-ai">
+                  Halo <strong>Muhammad Fadhli</strong>. Saya adalah Autonomous File Manager Agent Anda. Saya memiliki akses host langsung untuk membaca berkas, menjalankan query PowerShell, mencari dokumen, dan melakukan operasi CRUD file secara aman.<br><br>
+                  Coba tanyakan: <em>"Ada berapa total file perkuliahan dan rinciannya?"</em> atau gunakan pill <strong>@file:</strong>, <strong>@folder:</strong>, dan <strong>@path:</strong> di bawah untuk menandai target berkas/folder tertentu.
+                </div>
+              </div>
+
+              <!-- Quick Prompts Strip -->
+              <div style="display: flex; gap: var(--space-2); overflow-x: auto; padding-bottom: 2px;">
+                <button class="btn-clean" onclick="sendQuickPrompt('Ada berapa total file perkuliahan di D:\\Kuliah dan rinciannya?')">
+                  <i data-lucide="graduation-cap"></i> Total Berkas Kuliah
+                </button>
+                <button class="btn-clean" onclick="sendQuickPrompt('Rapikan folder D:\\DOWNLOAD dan kelompokkan sesuai silabus kuliah atau installer')">
+                  <i data-lucide="download"></i> Rapikan D:\DOWNLOAD
+                </button>
+                <button class="btn-clean" onclick="sendQuickPrompt('Cari dokumen materi kuliah tentang Interaksi Manusia dan Komputer')">
+                  <i data-lucide="search"></i> Cari Materi IMK
+                </button>
+                <button class="btn-clean" onclick="sendQuickPrompt('Jalankan powershell: Get-ChildItem -Path D:\\ -Directory')">
+                  <i data-lucide="terminal"></i> Cek Folder D:\ via PowerShell
+                </button>
+              </div>
+
+              <!-- Chat Input Wrapper with @ Mention -->
+              <div style="position: relative; display: flex; flex-direction: column; gap: 4px;">
+                
+                <!-- Quick Mention Pills -->
+                <div class="mention-quick-pills">
+                  <button type="button" class="mention-pill-btn file" onclick="insertMentionPrefix('file')" title="Sebut nama berkas (@file:)">
+                    <i data-lucide="file-text" style="width: 12px; height: 12px;"></i> @file:
+                  </button>
+                  <button type="button" class="mention-pill-btn folder" onclick="insertMentionPrefix('folder')" title="Sebut folder atau semester (@folder:)">
+                    <i data-lucide="folder" style="width: 12px; height: 12px;"></i> @folder:
+                  </button>
+                  <button type="button" class="mention-pill-btn path" onclick="insertMentionPrefix('path')" title="Sebut path direktori lengkap (@path:)">
+                    <i data-lucide="hard-drive" style="width: 12px; height: 12px;"></i> @path:
+                  </button>
+                  <span class="mention-pill-hint">Ketik @ atau klik pill untuk memilih target</span>
+                </div>
+
+                <!-- Mention Autocomplete Popup -->
+                <div class="mention-popup" id="mentionPopup">
+                  <div class="mention-popup-header" id="mentionPopupHeader">Pilih Target (@file: / @folder: / @path:)</div>
+                  <div id="mentionPopupList"></div>
+                </div>
+
+                <!-- Chat Input Form -->
+                <form class="chat-input-clean-bar" onsubmit="handleChatSubmit(event); return false;">
+                  <button type="button" class="btn-clean icon-only" onclick="toggleMentionPopup()" title="Pilih target (@file:, @folder:, @path:)" style="border: none;">
+                    @
+                  </button>
+                  <input type="text" id="chatInput" class="chat-clean-input" placeholder="Tanya agen atau gunakan @file: @folder: @path:..." autocomplete="off" onkeydown="if(event.key==='Enter'&&!event.shiftKey){handleChatSubmit(event);return false;}">
+                  <button type="button" class="btn-clean dark" id="btnChatSend" onclick="handleChatSubmit(event)">
+                    Kirim
+                  </button>
+                </form>
+
+              </div>
+
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================== -->
+        <!-- TAB 5: DISK & STORAGE                          -->
+        <!-- ============================================== -->
+        <section class="tab-view" id="view-clean">
+          <div class="panel-frame">
+            <div class="frame-header-strip">
+              <span>REAL-TIME HOST STORAGE TELEMETRY</span>
+              <button class="btn-clean" onclick="fetchStorageDetails()" style="height: 24px; padding: 0 8px; font-size: 11px;">
+                <i data-lucide="refresh-cw" style="width: 11px; height: 11px;"></i> Perbarui Info
+              </button>
+            </div>
+            <div class="panel-surface" style="padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-4);">
+              <div id="storageCardsContainer" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--space-4);">
+                <!-- Injected via JavaScript -->
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================== -->
+        <!-- TAB 6: REDESIGNED SETTINGS (PENGATURAN)        -->
+        <!-- ============================================== -->
+        <section class="tab-view" id="view-settings">
+          <div class="settings-grid-layout">
+            
+            <!-- Panel 1: AI Provider & Reasoning Model -->
+            <div class="panel-frame">
+              <div class="frame-header-strip">
+                <span>KONFIGURASI PROVIDER & MODEL PENALARAN AI</span>
+                <span class="status-pill success" id="settingsActiveProviderPill">Active: Gemini</span>
+              </div>
+              <div class="panel-surface">
+                
+                <!-- 4 Selectable Provider Cards -->
+                <div style="padding: var(--space-4) var(--space-4) 0;">
+                  <div style="font-size: 11.5px; font-weight: 600; color: var(--color-secondary); margin-bottom: var(--space-2);">
+                    PILIH PROVIDER UTAMA
+                  </div>
+                  <div class="provider-cards-grid">
+                    
+                    <!-- Card 1: Google Gemini -->
+                    <div class="provider-select-card active" id="provCard-gemini" onclick="selectProviderCard('gemini')">
+                      <div class="provider-card-header">
+                        <div class="provider-icon-badge" style="color: var(--color-info);">
+                          <i data-lucide="sparkles"></i>
+                        </div>
+                        <span class="provider-active-indicator"></span>
+                      </div>
+                      <div class="provider-name">Google Gemini</div>
+                      <div class="provider-desc">Model native multimodal kecepatan tinggi dengan integrasi Google Developer API.</div>
+                      <span class="provider-status-badge" style="background-color: #ecfdf5; color: #047857;" id="badgeProv-gemini">Configured</span>
+                    </div>
+
+                    <!-- Card 2: OpenRouter -->
+                    <div class="provider-select-card" id="provCard-openrouter" onclick="selectProviderCard('openrouter')">
+                      <div class="provider-card-header">
+                        <div class="provider-icon-badge" style="color: var(--color-violet);">
+                          <i data-lucide="layers"></i>
+                        </div>
+                        <span class="provider-active-indicator"></span>
+                      </div>
+                      <div class="provider-name">OpenRouter</div>
+                      <div class="provider-desc">Akses multi-vendor: Claude 3.5 Sonnet, Llama 3.3 70B, DeepSeek V3.</div>
+                      <span class="provider-status-badge" style="background-color: #fffbeb; color: #b45309;" id="badgeProv-openrouter">Optional</span>
+                    </div>
+
+                    <!-- Card 3: OpenAI -->
+                    <div class="provider-select-card" id="provCard-openai" onclick="selectProviderCard('openai')">
+                      <div class="provider-card-header">
+                        <div class="provider-icon-badge" style="color: var(--color-success);">
+                          <i data-lucide="cpu"></i>
+                        </div>
+                        <span class="provider-active-indicator"></span>
+                      </div>
+                      <div class="provider-name">OpenAI</div>
+                      <div class="provider-desc">Model OpenAI GPT-4o, GPT-4o-mini, dan model penalaran o3-mini.</div>
+                      <span class="provider-status-badge" style="background-color: #f3f4f6; color: var(--color-muted);" id="badgeProv-openai">Optional</span>
+                    </div>
+
+                    <!-- Card 4: Local / Offline -->
+                    <div class="provider-select-card" id="provCard-local" onclick="selectProviderCard('local')">
+                      <div class="provider-card-header">
+                        <div class="provider-icon-badge" style="color: var(--color-accent);">
+                          <i data-lucide="terminal"></i>
+                        </div>
+                        <span class="provider-active-indicator"></span>
+                      </div>
+                      <div class="provider-name">Agen Lokal Mandiri</div>
+                      <div class="provider-desc">Penalaran heuristik lokal dengan eksekusi PowerShell tanpa kuota API.</div>
+                      <span class="provider-status-badge" style="background-color: #ecfdf5; color: #047857;">Always Ready</span>
+                    </div>
+
+                  </div>
+                </div>
+
+                <!-- Form Fields per Active Provider -->
+                <div>
+                  
+                  <!-- Field 1: Active Model Selector -->
+                  <div class="settings-form-row">
+                    <div class="field-label-wrap">
+                      <h4>Model Penalaran Aktif</h4>
+                      <p>Pilih model kecerdasan buatan yang dipakai untuk mengeksekusi perintah dan pengorganisasian berkas.</p>
+                    </div>
+                    <div class="field-control-wrap">
+                      <div style="display: flex; gap: var(--space-2);">
+                        <select id="settingsModelSelect" class="control-input-clean" style="font-weight: 500;" onchange="handleModelSelectChange(this.value)">
+                          <!-- Populated dynamically via JavaScript -->
+                        </select>
+                      </div>
+                      <div style="display: flex; align-items: center; gap: var(--space-2); margin-top: 4px;">
+                        <span style="font-size: 11px; color: var(--color-muted);">Atau ketik nama model kustom:</span>
+                        <input type="text" id="customModelInput" class="control-input-clean" style="height: 28px; width: 260px; font-size: 11px;" placeholder="custom-model-id" oninput="handleCustomModelInput(this.value)">
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Field 2: API Key Configuration -->
+                  <div class="settings-form-row">
+                    <div class="field-label-wrap">
+                      <h4>Kunci API Provider</h4>
+                      <p>Kunci otorisasi disimpan secara aman di <code>config.json</code> di mesin lokal Anda.</p>
+                    </div>
+                    <div class="field-control-wrap">
+                      <div class="api-key-input-container">
+                        <input type="password" id="settingsApiKeyInput" class="control-input-clean" placeholder="Masukkan API Key...">
+                        <button type="button" class="btn-clean icon-only" onclick="toggleApiKeyMask()" title="Tampilkan / Sembunyikan Kunci">
+                          <i data-lucide="eye" id="iconEyeMask"></i>
+                        </button>
+                        <button type="button" class="btn-clean" id="btnTestConnection" onclick="testCurrentProviderKey()">
+                          <i data-lucide="check-circle-2"></i> Uji Koneksi API
+                        </button>
+                      </div>
+                      <!-- Test Connection Feedback Banner -->
+                      <div id="testResultBanner" class="test-connection-result">
+                        <i data-lucide="info" id="testResultIcon" style="width: 14px; height: 14px;"></i>
+                        <span id="testResultText">Hasil pengujian koneksi</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Field 3: Hyperparameters -->
+                  <div class="settings-form-row">
+                    <div class="field-label-wrap">
+                      <h4>Parameter Generasi</h4>
+                      <p>Kreativitas dan batas panjang respon model saat menganalisis dokumen.</p>
+                    </div>
+                    <div class="field-control-wrap" style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4);">
+                      <div>
+                        <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px;">
+                          <span>Temperature</span>
+                          <strong id="tempDisplay">0.2 (Presisi Tinggi)</strong>
+                        </div>
+                        <input type="range" id="paramTemp" min="0" max="1" step="0.1" value="0.2" style="width: 100%; cursor: pointer;" oninput="document.getElementById('tempDisplay').textContent = this.value + (this.value <= 0.3 ? ' (Presisi Tinggi)' : ' (Kreatif)')">
+                      </div>
+                      <div>
+                        <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px;">
+                          <span>Max Tokens</span>
+                          <strong id="tokensDisplay">1500</strong>
+                        </div>
+                        <input type="range" id="paramTokens" min="500" max="4000" step="250" value="1500" style="width: 100%; cursor: pointer;" oninput="document.getElementById('tokensDisplay').textContent = this.value">
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+
+              </div>
+            </div>
+
+            <!-- Panel 2: Watchdog & Monitored Directories -->
+            <div class="panel-frame">
+              <div class="frame-header-strip">
+                <span>DIREKTORI PEMANTAUAN KERNEL WATCHDOG</span>
+                <span style="font-size: 10.5px; color: var(--color-muted);">File baru akan otomatis dimasukkan ke Staging Queue</span>
+              </div>
+              <div class="panel-surface">
+                
+                <div class="settings-form-row">
+                  <div class="field-label-wrap">
+                    <h4>Daftar Folder Dipantau</h4>
+                    <p>Folder yang aktif dipantau secara real-time melalui service watchdog Windows.</p>
+                  </div>
+                  <div class="field-control-wrap">
+                    <div class="watch-paths-table" id="watchPathsContainer">
+                      <!-- Populated via JavaScript -->
+                    </div>
+                    
+                    <!-- Add Path Input -->
+                    <div style="display: flex; gap: var(--space-2); margin-top: var(--space-2);">
+                      <input type="text" id="newWatchPathInput" class="control-input-clean" placeholder="Contoh: D:\Kuliah\Tugas Baru atau C:\Users\...\Downloads">
+                      <button type="button" class="btn-clean" onclick="addNewWatchPath()">
+                        <i data-lucide="plus"></i> Tambah Path
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- Panel 3: Base Directory Structure -->
+            <div class="panel-frame">
+              <div class="frame-header-strip">
+                <span>STRUKTUR PATH DASAR PARTISI HOST</span>
+                <span style="font-size: 10.5px; color: var(--color-muted);">Lokasi target default untuk klasifikasi perkuliahan dan berkas</span>
+              </div>
+              <div class="panel-surface">
+                
+                <div class="settings-form-row">
+                  <div class="field-label-wrap">
+                    <h4>Base Path Perkuliahan</h4>
+                    <p>Folder induk mata kuliah Gunadarma (2KA31 & 3KA31).</p>
+                  </div>
+                  <div class="field-control-wrap">
+                    <input type="text" id="baseAcademicInput" class="control-input-clean" value="D:\Kuliah">
+                  </div>
+                </div>
+
+                <div class="settings-form-row">
+                  <div class="field-label-wrap">
+                    <h4>Base Path Proyek & Kode</h4>
+                    <p>Folder penyimpanan repositori kode dan aplikasi.</p>
+                  </div>
+                  <div class="field-control-wrap">
+                    <input type="text" id="baseProjectInput" class="control-input-clean" value="D:\PROJECT">
+                  </div>
+                </div>
+
+                <div class="settings-form-row">
+                  <div class="field-label-wrap">
+                    <h4>Base Path Game & Aset</h4>
+                    <p>Folder Minecraft assets, mods, shaderpacks, dan file game.</p>
+                  </div>
+                  <div class="field-control-wrap">
+                    <input type="text" id="baseGameInput" class="control-input-clean" value="D:\Game">
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- Bottom Action Controls -->
+            <div class="panel-frame">
+              <div class="panel-surface settings-bottom-actions">
+                <button type="button" class="btn-clean" onclick="loadSettingsFromServer()">
+                  <i data-lucide="undo-2"></i> Batal / Reset
+                </button>
+                <button type="button" class="btn-clean dark" onclick="saveAllSettingsForm()">
+                  <i data-lucide="save"></i> Simpan & Terapkan Pengaturan
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+      </div>
+    </main>
+
+  </div>
+
+  <!-- Toast Component -->
+  <div class="app-toast" id="appToast" role="status" aria-live="polite">
+    <i data-lucide="check-circle" style="width: 15px; height: 15px;"></i>
+    <span id="toastMessage">Pemberitahuan sistem</span>
+  </div>
+
+  <!-- Native HTML5 Dialog for File Preview -->
+  <dialog id="previewModalDialog" style="border: 1px solid var(--color-border); border-radius: 12px; padding: 0; width: 620px; max-width: 90vw; background: #ffffff; box-shadow: 0 12px 30px rgba(0,0,0,0.15); margin: auto;">
+    <div style="padding: 12px 16px; border-bottom: 1px solid var(--color-border); display: flex; align-items: center; justify-content: space-between; background: var(--color-sidebar);">
+      <strong id="modalFileName" style="font-size: 13px;">Preview Dokumen</strong>
+      <button class="btn-clean icon-only" onclick="document.getElementById('previewModalDialog').close()" style="border: none; width: 24px; height: 24px;">
+        <i data-lucide="x"></i>
+      </button>
+    </div>
+    <div style="padding: 16px; max-height: 440px; overflow-y: auto;" id="modalFileBody">
+      <!-- Preview content -->
+    </div>
+    <div style="padding: 10px 16px; border-top: 1px solid var(--color-border); display: flex; justify-content: flex-end; background: var(--color-sidebar);">
+      <button class="btn-clean" onclick="document.getElementById('previewModalDialog').close()">Tutup</button>
+    </div>
+  </dialog>
+
+  <!-- App Controller Script -->
+  <script src="app.js"></script>
+</body>
+</html>

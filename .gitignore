@@ -1,0 +1,36 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.class
+
+# Local Configuration & Secrets (CRITICAL)
+config.json
+.env
+.env.*
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# IDE & Editor configs
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Logs & Temporary Files
+*.log
+*.tmp
+*.bak
+*.swp
+*.lnk
+.tempmediaStorage/
+
+# OS specific
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.BIN/
+.DS_Store

@@ -1,0 +1,34 @@
+{
+  "active_provider": "gemini",
+  "providers": {
+    "gemini": {
+      "name": "Google Gemini",
+      "model": "gemini-3.5-flash-lite",
+      "api_key": "YOUR_GEMINI_API_KEY_HERE"
+    },
+    "openrouter": {
+      "name": "OpenRouter",
+      "model": "google/gemini-2.5-flash",
+      "api_key": ""
+    },
+    "openai": {
+      "name": "OpenAI",
+      "model": "gpt-4o-mini",
+      "api_key": ""
+    },
+    "local": {
+      "name": "Agen Lokal Mandiri",
+      "model": "heuristic-powershell",
+      "api_key": ""
+    }
+  },
+  "watch_paths": [
+    "D:\\DOWNLOAD",
+    "C:\\Users\\fadhl\\OneDrive\\Documents"
+  ],
+  "academic_base": "D:\\Kuliah",
+  "personal_base": "D:\\fadhl",
+  "project_base": "D:\\PROJECT",
+  "game_base": "D:\\Game",
+  "port": 8765
+}
