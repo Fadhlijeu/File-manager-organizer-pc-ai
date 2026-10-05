@@ -145,6 +145,12 @@ class AgentToolbox:
             return f"Error reading document: {str(e)}"
 
     @staticmethod
+    def ai_decide_safety(path: str, action: str = 'MOVE') -> str:
+        """Evaluates whether a target file/folder can be moved/deleted, is protected (e.g. project asset), or requires double confirmation."""
+        from ai_decide import ai_decide_engine
+        return json.dumps(ai_decide_engine.evaluate(path, action), indent=2, ensure_ascii=False)
+
+    @staticmethod
     def move(src: str, dst_folder: str, new_name: Optional[str] = None) -> str:
         """Safely moves a file to target folder with collision check."""
         res = move_item(src, dst_folder, new_name)

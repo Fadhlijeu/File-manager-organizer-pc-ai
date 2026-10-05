@@ -147,48 +147,75 @@ function toggleSidebar() {
    3. Overview Dashboard (KPI, Chart, Timeline, Table)
    ======================================================== */
 function changeOverviewRange(val) {
-  const kpiFiles = document.getElementById('kpiTotalFiles');
-  const kpiDelta = document.getElementById('kpiDeltaFiles');
-  const totalEvents = document.getElementById('chartTotalEvents');
+  // Real stats are fetched from server
+  fetchOverviewStats();
+}
 
-  if (val === 'week') {
-    if (kpiFiles) kpiFiles.textContent = '127';
-    if (kpiDelta) kpiDelta.innerHTML = `<i data-lucide="trending-up" style="width: 11px; height: 11px;"></i> +12.4%`;
-    if (totalEvents) totalEvents.textContent = '482';
-  } else if (val === 'month') {
-    if (kpiFiles) kpiFiles.textContent = '490';
-    if (kpiDelta) kpiDelta.innerHTML = `<i data-lucide="trending-up" style="width: 11px; height: 11px;"></i> +24.8%`;
-    if (totalEvents) totalEvents.textContent = '1,890';
-  } else if (val === 'quarter') {
-    if (kpiFiles) kpiFiles.textContent = '1,240';
-    if (kpiDelta) kpiDelta.innerHTML = `<i data-lucide="trending-up" style="width: 11px; height: 11px;"></i> +48.2%`;
-    if (totalEvents) totalEvents.textContent = '5,420';
+
+async function fetchOverviewStats() {
+  try {
+    const res = await fetch('/api/stats/overview');
+    if (!res.ok) return;
+    const json = await res.json();
+    const data = json.data || {};
+
+    const kpiFiles = document.getElementById('kpiTotalFiles');
+    if (kpiFiles) kpiFiles.textContent = data.total_organized || 0;
+
+    const totalEvents = document.getElementById('chartTotalEvents');
+    if (totalEvents) totalEvents.textContent = data.total_io_events || 0;
+
+    const cPindah = document.getElementById('countPindah');
+    if (cPindah) cPindah.textContent = data.operations?.move || 0;
+
+    const cRename = document.getElementById('countRename');
+    if (cRename) cRename.textContent = data.operations?.rename || 0;
+
+    const cScan = document.getElementById('countAiScan');
+    if (cScan) cScan.textContent = data.operations?.ai_scan || 0;
+
+    const actHeader = document.getElementById('activityCountHeader');
+    if (actHeader) actHeader.textContent = `${data.total_io_events || 0} event hari ini`;
+
+    renderVolumeChart(data.chart_bars || []);
+    renderTimelineUpdates(data.events || []);
+
+    const storageElem = document.getElementById('kpiStorageFree');
+    if (storageElem && data.storage_free_gb) {
+      storageElem.textContent = `${data.storage_free_gb} GB`;
+    }
+  } catch (e) {
+    console.error('Error fetching overview stats:', e);
   }
-  renderVolumeChart();
-  initLucide();
 }
 
 function refreshOverviewData() {
   fetchQueue();
   fetchStorageDetails();
+  fetchOverviewStats();
   showToast("Data dashboard diperbarui.");
 }
 
-function renderVolumeChart() {
+function renderVolumeChart(barData) {
   const container = document.getElementById('volumeChartContainer');
   if (!container) return;
   container.innerHTML = '';
 
-  const heights = [35, 48, 62, 55, 78, 85, 70, 92, 60, 74, 88, 65, 82, 50, 38];
-  const days = ['Mon AM', 'Mon PM', 'Tue AM', 'Tue PM', 'Wed AM', 'Wed PM', 'Thu AM', 'Thu PM', 'Fri AM', 'Fri PM', 'Sat AM', 'Sat PM', 'Sun AM', 'Sun PM', 'End'];
+  const rawBuckets = Array.isArray(barData) && barData.length === 15 ? barData : [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+  const maxVal = Math.max(...rawBuckets, 1);
+  const days = ['00-02', '02-04', '04-06', '06-08', '08-10', '10-12', '12-14', '14-16', '16-18', '18-20', '20-22', '22-24', 'Live-1', 'Live-2', 'Now'];
 
-  heights.forEach((h, i) => {
+  rawBuckets.forEach((val, i) => {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'chart-bar-btn';
-    btn.style.setProperty('--bar-height', `${h}%`);
-    btn.setAttribute('aria-label', `${days[i]}: ${Math.round(h * 5.2)} events`);
-    btn.innerHTML = `<span class="chart-bar-tooltip">${days[i]}: ${Math.round(h * 5.2)}</span>`;
+    const pct = val === 0 ? 3 : Math.min(100, Math.round((val / maxVal) * 100));
+    btn.style.setProperty('--bar-height', `${pct}%`);
+    if (val === 0) {
+      btn.style.opacity = '0.35';
+    }
+    btn.setAttribute('aria-label', `${days[i]}: ${val} events`);
+    btn.innerHTML = `<span class="chart-bar-tooltip">${days[i]}: ${val} events</span>`;
     btn.onclick = () => {
       container.querySelectorAll('.chart-bar-btn').forEach(b => b.removeAttribute('aria-pressed'));
       btn.setAttribute('aria-pressed', 'true');
@@ -197,40 +224,34 @@ function renderVolumeChart() {
   });
 }
 
-function renderTimelineUpdates(period) {
+function renderTimelineUpdates(events) {
   const container = document.getElementById('timelineListContainer');
   if (!container) return;
 
-  const eventsData = {
-    today: [
-      { title: "Deteksi Tugas IMK di Staging", time: "14:22", desc: "Berkas baru diunduh ke D:\\DOWNLOAD", icon: "file-plus" },
-      { title: "Klasifikasi Otomatis Gunadarma", time: "12:05", desc: "Dipindahkan ke D:\\Kuliah\\3KA31\\AK011305", icon: "arrow-right-circle" },
-      { title: "Pemeriksaan Disk Host D:\\", time: "09:30", desc: "Ruang bebas aman: 212.8 GB tersedia", icon: "hard-drive" },
-      { title: "Sinkronisasi Watchdog Kernel", time: "08:00", desc: "Watchdog aktif di D:\\DOWNLOAD & OneDrive", icon: "shield-check" }
-    ],
-    yesterday: [
-      { title: "Eksekusi Batch 4 Berkas Perkuliahan", time: "Kemarin 17:40", desc: "Slide materi PBO dan Riset Operasional dialokasikan", icon: "check-circle" },
-      { title: "Pembersihan Cache Unduhan", time: "Kemarin 11:15", desc: "2 berkas sementara dihapus ke Recycle Bin", icon: "trash-2" }
-    ],
-    week: [
-      { title: "Penataan Struktur Mata Kuliah 3KA31", time: "3 hari lalu", desc: "8 folder mata kuliah aktif tersinkronisasi", icon: "folder-tree" },
-      { title: "Pembaruan Kunci API Gemini 3.5", time: "4 hari lalu", desc: "Model gemini-3.5-flash-lite terverifikasi", icon: "sparkles" },
-      { title: "Pemasangan Watchdog Multi-Path", time: "5 hari lalu", desc: "Service Windows watchdog aktif", icon: "activity" }
-    ]
-  };
+  const list = Array.isArray(events) ? events : [];
+  if (list.length === 0) {
+    container.innerHTML = `
+      <div style="padding: 32px 16px; text-align: center; color: var(--color-muted);">
+        <i data-lucide="shield-check" style="width: 28px; height: 28px; margin-bottom: 8px; opacity: 0.5;"></i>
+        <div style="font-size: 12px; font-weight: 500; color: var(--color-text);">Belum ada aktivitas hari ini</div>
+        <div style="font-size: 11px; margin-top: 4px;">Aktivitas dimulai dari 0 hari ini. Setiap operasi pemindahan, scan AI, atau proteksi berkas akan otomatis muncul di sini.</div>
+      </div>
+    `;
+    initLucide();
+    return;
+  }
 
-  const list = eventsData[period] || eventsData.today;
   container.innerHTML = list.map(ev => `
     <div class="timeline-item">
       <div class="timeline-icon-box">
-        <i data-lucide="${ev.icon}"></i>
+        <i data-lucide="${ev.icon || 'activity'}"></i>
       </div>
       <div class="timeline-content">
         <div class="timeline-title-row">
-          <span>${escapeHtml(ev.title)}</span>
-          <span class="timeline-time">${ev.time}</span>
+          <span>${escapeHtml(ev.title || 'Operasi Berkas')}</span>
+          <span class="timeline-time">${ev.time || ''}</span>
         </div>
-        <div class="timeline-desc">${escapeHtml(ev.desc)}</div>
+        <div class="timeline-desc">${escapeHtml(ev.desc || '')}</div>
       </div>
     </div>
   `).join('');
@@ -281,18 +302,42 @@ function renderQueueTable(items) {
   items.forEach(it => {
     const tr = document.createElement('tr');
     const checked = selectedQueueIds.has(it.id) ? 'checked' : '';
+    const safety = it.safety || { decision: 'SAFE', reason: 'Berkas dokumen aman.' };
+    
+    let safetyBadge = '<span class="status-pill success"><i data-lucide="check" style="width: 10px; height: 10px;"></i> Aman</span>';
+    let actionBtn = `
+      <button class="btn-clean" onclick="executeQueueItem('${it.id}')" style="height: 24px; padding: 0 8px; font-size: 11px;">
+        <i data-lucide="arrow-right" style="width: 11px; height: 11px;"></i> Pindahkan
+      </button>
+    `;
+
+    if (safety.decision === 'PROTECT') {
+      safetyBadge = `<span class="status-pill danger" title="${escapeHtml(safety.reason)}"><i data-lucide="shield" style="width: 10px; height: 10px;"></i> Dilindungi AI Decide</span>`;
+      actionBtn = `
+        <button class="btn-clean" disabled title="${escapeHtml(safety.reason)}" style="height: 24px; padding: 0 8px; font-size: 11px; opacity: 0.5; cursor: not-allowed;">
+          <i data-lucide="lock" style="width: 11px; height: 11px;"></i> Dilindungi
+        </button>
+      `;
+    } else if (safety.decision === 'CONFIRM_REQUIRED') {
+      safetyBadge = `<span class="status-pill warning" title="${escapeHtml(safety.reason)}"><i data-lucide="alert-triangle" style="width: 10px; height: 10px;"></i> Konfirmasi Ganda</span>`;
+      actionBtn = `
+        <button class="btn-clean" onclick="executeQueueItem('${it.id}', true)" style="height: 24px; padding: 0 8px; font-size: 11px; color: var(--color-warning);">
+          <i data-lucide="alert-circle" style="width: 11px; height: 11px;"></i> Konfirmasi & Pindah
+        </button>
+      `;
+    }
+
+    const targetFolder = it.classification?.target_folder || it.target_subfolder || 'Dokumen Kuliah';
+    const targetBase = targetFolder.split(/[/\\]/).pop() || targetFolder;
+
     tr.innerHTML = `
       <td><input type="checkbox" ${checked} onchange="toggleSelectQueueItem('${it.id}', this.checked)"></td>
       <td><strong>${escapeHtml(it.name)}</strong></td>
-      <td><span class="status-pill info">${escapeHtml(it.target_subfolder || 'Dokumen Kuliah')}</span></td>
+      <td><span class="status-pill info">${escapeHtml(targetBase)}</span></td>
       <td class="tabular-nums">${formatBytes(it.size)}</td>
-      <td style="font-family: var(--font-mono); font-size: 11px; color: var(--color-muted);">${escapeHtml(it.source_path)}</td>
-      <td><span class="status-pill warning">Siap Pindah</span></td>
-      <td style="text-align: right;">
-        <button class="btn-clean" onclick="executeQueueItem('${it.id}')" style="height: 24px; padding: 0 8px; font-size: 11px;">
-          <i data-lucide="arrow-right" style="width: 11px; height: 11px;"></i> Pindahkan
-        </button>
-      </td>
+      <td style="font-family: var(--font-mono); font-size: 11px; color: var(--color-muted);">${escapeHtml(it.path || it.source_path || '')}</td>
+      <td>${safetyBadge}</td>
+      <td style="text-align: right;">${actionBtn}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -834,6 +879,30 @@ function renderFiles(files) {
   files.forEach(file => {
     const row = document.createElement('div');
     row.className = 'file-row-clean';
+    const safety = file.safety || { decision: 'SAFE' };
+    let safetyBadge = '';
+    let deleteBtn = `
+      <button type="button" class="btn-clean danger-tone icon-only" style="height: 24px; width: 24px;" title="Pindahkan ke Recycle Bin" onclick="confirmDeleteFile('${escapePath(file.path)}', '${escapeHtml(file.name)}')">
+        <i data-lucide="trash-2" style="width: 12px; height: 12px;"></i>
+      </button>
+    `;
+
+    if (safety.decision === 'PROTECT') {
+      safetyBadge = `<span class="status-pill danger" title="${escapeHtml(safety.reason)}" style="font-size: 10px; height: 22px; padding: 0 6px;"><i data-lucide="shield" style="width: 10px; height: 10px;"></i> Dilindungi (AI Decide)</span>`;
+      deleteBtn = `
+        <button type="button" class="btn-clean icon-only" disabled title="Dilarang: Aset proyek dilindungi oleh AI Decide" style="height: 24px; width: 24px; opacity: 0.35; cursor: not-allowed;">
+          <i data-lucide="lock" style="width: 12px; height: 12px;"></i>
+        </button>
+      `;
+    } else if (safety.decision === 'CONFIRM_REQUIRED') {
+      safetyBadge = `<span class="status-pill warning" title="${escapeHtml(safety.reason)}" style="font-size: 10px; height: 22px; padding: 0 6px;"><i data-lucide="alert-triangle" style="width: 10px; height: 10px;"></i> Konfirmasi Ganda</span>`;
+      deleteBtn = `
+        <button type="button" class="btn-clean danger-tone icon-only" style="height: 24px; width: 24px;" title="Berkas Sensitif: Butuh Konfirmasi Ganda" onclick="confirmDeleteFile('${escapePath(file.path)}', '${escapeHtml(file.name)}', true)">
+          <i data-lucide="trash-2" style="width: 12px; height: 12px;"></i>
+        </button>
+      `;
+    }
+
     row.innerHTML = `
       <div class="file-row-left">
         <i data-lucide="file-text" style="width: 16px; height: 16px; color: var(--color-muted);"></i>
@@ -843,15 +912,14 @@ function renderFiles(files) {
         </div>
       </div>
       <div class="file-row-actions">
+        ${safetyBadge}
         <button type="button" class="btn-clean primary-tone" style="height: 24px; padding: 0 6px; font-size: 10.5px; font-family: var(--font-mono);" onclick="event.stopPropagation(); mentionFileToken('${escapeHtml(file.name)}')">
           @file
         </button>
         <button type="button" class="btn-clean" style="height: 24px; padding: 0 6px; font-size: 11px;" onclick="openFilePreview('${escapePath(file.path)}')">
           Baca
         </button>
-        <button type="button" class="btn-clean danger-tone icon-only" style="height: 24px; width: 24px;" onclick="confirmDeleteFile('${escapePath(file.path)}', '${escapeHtml(file.name)}')">
-          <i data-lucide="trash-2" style="width: 12px; height: 12px;"></i>
-        </button>
+        ${deleteBtn}
       </div>
     `;
     list.appendChild(row);

@@ -22,6 +22,7 @@ ENV/
 
 # Logs & Temporary Files
 *.log
+activity_log.json
 *.tmp
 *.bak
 *.swp

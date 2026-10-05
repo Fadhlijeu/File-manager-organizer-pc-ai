@@ -5,6 +5,8 @@ import hashlib
 import subprocess
 import send2trash
 from content_extractor import get_file_metadata, extract_content
+from ai_decide import ai_decide_engine
+from activity_tracker import activity_tracker
 
 IGNORED_SYSTEM_NAMES = {
     '$recycle.bin', 'system volume information', 'dumpstack.log.tmp',
@@ -21,7 +23,7 @@ def is_system_file(name: str) -> bool:
 def get_drives_info():
     drives = []
     for letter in ['C', 'D']:
-        path = f'{letter}:\\\\'
+        path = f'{letter}:\\'
         if os.path.exists(path):
             total, used, free = shutil.disk_usage(path)
             drives.append({
@@ -37,12 +39,12 @@ def get_drives_info():
 def get_storage_details():
     drives = get_drives_info()
     key_spaces = [
-        {"name": "Kuliah (2KA & 3KA)", "path": r"D:\\Kuliah", "icon": "graduation-cap"},
-        {"name": "DOWNLOAD & Installers", "path": r"D:\\DOWNLOAD", "icon": "download-simple"},
-        {"name": "Developer Projects", "path": r"D:\\PROJECT", "icon": "code"},
-        {"name": "Game & Minecraft Assets", "path": r"D:\\Game", "icon": "game-controller"},
-        {"name": "Personal Workspace", "path": r"D:\\fadhl", "icon": "user"},
-        {"name": "OneDrive Documents", "path": os.path.expanduser(r"~\\OneDrive\\Documents"), "icon": "files"}
+        {"name": "Kuliah (2KA & 3KA)", "path": r"D:\Kuliah", "icon": "graduation-cap"},
+        {"name": "DOWNLOAD & Installers", "path": r"D:\DOWNLOAD", "icon": "download-simple"},
+        {"name": "Developer Projects", "path": r"D:\PROJECT", "icon": "code"},
+        {"name": "Game & Minecraft Assets", "path": r"D:\Game", "icon": "game-controller"},
+        {"name": "Personal Workspace", "path": r"D:\fadhl", "icon": "user"},
+        {"name": "OneDrive Documents", "path": os.path.expanduser(r"~\OneDrive\Documents"), "icon": "files"}
     ]
     space_stats = []
     for sp in key_spaces:
@@ -76,27 +78,30 @@ def list_directory(target_path):
     try:
         with os.scandir(target_path) as entries:
             for entry in entries:
-                # Filter out OS protected/system files
                 if is_system_file(entry.name):
                     continue
                 try:
                     is_dir = entry.is_dir(follow_symlinks=False)
                     stat = entry.stat(follow_symlinks=False)
                     ext = os.path.splitext(entry.name)[1].lower() if not is_dir else ''
+                    
+                    # Run lightweight safety assessment for files
+                    safety = ai_decide_engine.evaluate(entry.path)
+                    
                     items.append({
                         'name': entry.name,
                         'path': entry.path,
                         'is_dir': is_dir,
                         'size': stat.st_size if not is_dir else 0,
                         'modified': stat.st_mtime,
-                        'extension': ext
+                        'extension': ext,
+                        'safety': safety
                     })
                 except Exception:
                     continue
     except Exception as e:
         return {'error': str(e), 'items': []}
 
-    # Sort directories first, then files alphabetically
     items.sort(key=lambda x: (not x['is_dir'], x['name'].lower()))
     return {
         'path': os.path.abspath(target_path),
@@ -111,20 +116,49 @@ def create_folder(parent_path, folder_name):
     except Exception as e:
         return {'error': str(e)}
 
-def rename_item(src_path, new_name):
+def rename_item(src_path, new_name, force=False):
     if not os.path.exists(src_path):
         return {'error': 'Sumber tidak ditemukan'}
+        
+    safety = ai_decide_engine.evaluate(src_path, 'RENAME')
+    if safety['decision'] == 'PROTECT' and not force:
+        return {
+            'success': False,
+            'blocked_by_ai_decide': True,
+            'safety': safety,
+            'error': f"Operasi ganti nama diblokir oleh AI Decide: {safety['reason']}"
+        }
+
     parent = os.path.dirname(src_path)
     dst = os.path.join(parent, new_name)
     try:
         os.rename(src_path, dst)
-        return {'success': True, 'new_path': dst}
+        activity_tracker.record_event('rename', f'Ganti Nama: {os.path.basename(src_path)}', f'Nama baru: {new_name}', icon='edit-3', target_path=dst)
+        return {'success': True, 'new_path': dst, 'safety': safety}
     except Exception as e:
         return {'error': str(e)}
 
-def move_item(src_path, dst_dir, new_name=None):
+def move_item(src_path, dst_dir, new_name=None, force=False):
     if not os.path.exists(src_path):
         return {'error': f'Sumber tidak ditemukan: {src_path}'}
+        
+    safety = ai_decide_engine.evaluate(src_path, 'MOVE')
+    if safety['decision'] == 'PROTECT' and not force:
+        return {
+            'success': False,
+            'blocked_by_ai_decide': True,
+            'safety': safety,
+            'error': f"Operasi pemindahan diblokir oleh AI Decide: {safety['reason']}"
+        }
+        
+    if safety['decision'] == 'CONFIRM_REQUIRED' and not force:
+        return {
+            'success': False,
+            'requires_confirmation': True,
+            'safety': safety,
+            'warning': safety['reason']
+        }
+
     if not os.path.exists(dst_dir):
         os.makedirs(dst_dir, exist_ok=True)
 
@@ -136,14 +170,13 @@ def move_item(src_path, dst_dir, new_name=None):
         src_md5 = _get_md5(src_path)
         dst_md5 = _get_md5(dst_path)
         if src_md5 and dst_md5 and src_md5 == dst_md5:
-            # File is identical duplicate, safely send src to Recycle Bin
             try:
                 send2trash.send2trash(src_path)
+                activity_tracker.record_event('move', f'Duplikat Terorganisasi: {filename}', f'Sumber duplikat identik dibersihkan ke Recycle Bin', icon='copy', target_path=dst_path)
                 return {'success': True, 'dst_path': dst_path, 'note': 'Duplicate berkas identik dideteksi, sumber dipindahkan ke Recycle Bin.'}
             except Exception:
                 pass
         
-        # Conflict: Rename with suffix
         base, ext = os.path.splitext(filename)
         counter = 1
         while os.path.exists(os.path.join(dst_dir, f"{base}_{counter}{ext}")):
@@ -152,17 +185,36 @@ def move_item(src_path, dst_dir, new_name=None):
 
     try:
         shutil.move(src_path, dst_path)
-        return {'success': True, 'dst_path': dst_path}
+        activity_tracker.record_event('move', f'Pemindahan: {os.path.basename(src_path)}', f'Dipindahkan ke {os.path.basename(dst_dir)}', icon='arrow-right-circle', target_path=dst_path)
+        return {'success': True, 'dst_path': dst_path, 'safety': safety}
     except Exception as e:
         return {'error': str(e)}
 
-def delete_item(item_path):
+def delete_item(item_path, force=False):
     if not os.path.exists(item_path):
         return {'error': 'Path tidak ditemukan'}
+        
+    safety = ai_decide_engine.evaluate(item_path, 'DELETE')
+    if safety['decision'] == 'PROTECT' and not force:
+        return {
+            'success': False,
+            'blocked_by_ai_decide': True,
+            'safety': safety,
+            'error': f"Operasi penghapusan diblokir oleh AI Decide: {safety['reason']}"
+        }
+        
+    if safety['decision'] == 'CONFIRM_REQUIRED' and not force:
+        return {
+            'success': False,
+            'requires_confirmation': True,
+            'safety': safety,
+            'warning': safety['reason']
+        }
+
     try:
-        # Recycle Bin Safe Deletion
         send2trash.send2trash(item_path)
-        return {'success': True, 'message': 'Dipindahkan ke Windows Recycle Bin'}
+        activity_tracker.record_event('delete', f'Penghapusan: {os.path.basename(item_path)}', 'Dipindahkan ke Windows Recycle Bin', icon='trash-2', target_path=item_path)
+        return {'success': True, 'message': 'Dipindahkan ke Windows Recycle Bin', 'safety': safety}
     except Exception as e:
         return {'error': str(e)}
 

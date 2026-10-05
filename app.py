@@ -11,6 +11,8 @@ from pydantic import BaseModel
 
 from ai_engine import AIEngine
 from watcher import FileQueueManager, MultiPathWatcher
+from ai_decide import ai_decide_engine
+from activity_tracker import activity_tracker
 from crud_engine import (
     list_directory, create_folder, rename_item, move_item,
     delete_item, open_in_windows_explorer, get_drives_info, get_storage_details
@@ -93,6 +95,37 @@ def shutdown_event():
 
 # ----------------- REST Endpoints -----------------
 
+
+# ----------------- AI Decide & Real Telemetry Endpoints -----------------
+
+@app.get("/api/stats/overview")
+def get_stats_overview():
+    """Returns real telemetry data starting from 0 today."""
+    summary = activity_tracker.get_summary()
+    queue = queue_mgr.get_queue()
+    drives = get_drives_info()
+    d_drive = next((d for d in drives if d['letter'] == 'D'), None)
+    return {
+        "status": "success",
+        "data": {
+            **summary,
+            "queue_count": len(queue),
+            "storage_free_gb": d_drive['free_gb'] if d_drive else 0,
+            "storage_used_gb": d_drive['used_gb'] if d_drive else 0,
+            "storage_percent": d_drive['percent_used'] if d_drive else 0,
+        }
+    }
+
+class SafetyCheckRequest(BaseModel):
+    path: str
+    action: Optional[str] = 'MOVE'
+
+@app.post("/api/ai-decide/evaluate")
+def api_ai_decide_evaluate(req: SafetyCheckRequest):
+    """Dynamic contextual AI Decide evaluator."""
+    safety = ai_decide_engine.evaluate(req.path, req.action)
+    return {"status": "success", "safety": safety}
+
 @app.get("/api/status")
 def get_status():
     drives = get_drives_info()
@@ -151,6 +184,7 @@ class ExecuteQueueRequest(BaseModel):
     item_id: Optional[str] = None
     custom_target_folder: Optional[str] = None
     custom_name: Optional[str] = None
+    force: Optional[bool] = False
 
 @app.post("/api/queue/execute")
 def execute_queue(req: ExecuteQueueRequest):
@@ -168,7 +202,7 @@ def execute_queue(req: ExecuteQueueRequest):
         dst_name = req.custom_name or (clf.get('suggested_name') if clf else None)
 
         if dst_folder:
-            res = move_item(src, dst_folder, dst_name)
+            res = move_item(src, dst_folder, dst_name, force=req.force)
             if res.get('success'):
                 queue_mgr.mark_completed(it['id'])
                 results.append({"id": it['id'], "status": "moved", "dest": res.get('new_path')})
@@ -220,17 +254,19 @@ class MoveRequest(BaseModel):
     src: str
     dst_dir: str
     new_name: Optional[str] = None
+    force: Optional[bool] = False
 
 @app.post("/api/crud/move")
 def api_move(req: MoveRequest):
-    return move_item(req.src, req.dst_dir, req.new_name)
+    return move_item(req.src, req.dst_dir, req.new_name, force=req.force)
 
 class DeleteRequest(BaseModel):
     path: str
+    force: Optional[bool] = False
 
 @app.post("/api/crud/delete")
 def api_delete(req: DeleteRequest):
-    return delete_item(req.path)
+    return delete_item(req.path, force=req.force)
 
 class OpenExplorerRequest(BaseModel):
     path: str
