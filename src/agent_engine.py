@@ -168,9 +168,9 @@ class AgentToolbox:
         return json.dumps(res, indent=2)
 
     @staticmethod
-    def delete_trash(path: str) -> str:
+    def delete_trash(path: str, force: bool = True) -> str:
         """Safely deletes file to Windows Recycle Bin."""
-        res = delete_item(path)
+        res = delete_item(path, force=force)
         return json.dumps(res, indent=2)
 
     @staticmethod
@@ -434,10 +434,10 @@ class AutonomousAgent:
                 path = args.get('path', '')
                 force = args.get('force', False)
                 confirmed = args.get('confirmed', False)
-                user_confirmed = any(w in (user_prompt or '').lower() for w in ['ya hapus', 'ya, hapus', 'konfirmasi', 'confirm', 'setuju', 'yes delete'])
+                user_confirmed = any(w in (user_prompt or '').lower() for w in ['ya hapus', 'ya, hapus', 'konfirmasi', 'confirm', 'setuju', 'yes delete', 'hapus ini', 'yes'])
                 if not force and not confirmed and not user_confirmed:
                     return f"CONFIRMATION_REQUIRED: Anda akan menghapus '{path}'. Balas dengan 'ya hapus' untuk mengkonfirmasi penghapusan ini ke Recycle Bin."
-                return self.toolbox.delete_trash(path)
+                return self.toolbox.delete_trash(path, force=True)
             elif action_name == 'create_folder':
                 path = args.get('path', '')
                 return self.toolbox.make_folder(path)
@@ -522,7 +522,7 @@ WIDGET UI BUATAN (Gunakan untuk tampilan yang memukau dan interaktif):
 :::
 Contoh saat konfirmasi hapus berkas:
 :::action-btn
-[Ya, Hapus Sekarang] | danger | powershell:Remove-Item -LiteralPath 'D:\\\\Kuliah\\\\3KA31\\\\\\\Administrasi & Jadwal\ABSENSI 3KA31.xlsx' -Force | Konfirmasi hapus permanen berkas ke Recycle Bin
+[Ya, Hapus Sekarang] | danger | crud_delete:D:\Kuliah\3KA31\Administrasi & Jadwal\ABSENSI 3KA31.xlsx -LiteralPath 'D:\\\\Kuliah\\\\3KA31\\\\\\\Administrasi & Jadwal\ABSENSI 3KA31.xlsx' -Force | Konfirmasi hapus permanen berkas ke Recycle Bin
 [Batalkan] | secondary | chat:Batalkan penghapusan berkas | Batal
 :::
 

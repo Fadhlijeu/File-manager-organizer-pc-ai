@@ -806,6 +806,83 @@
                     </div>
                   </div>
 
+                  <!-- Full-Width Section: System Preferences & Toggles (Modern Switch & Radio) -->
+                  <div class="settings-full-section preferences-section">
+                    <div class="hyperparams-header">
+                      <div class="hyperparams-title-area">
+                        <h4 class="registry-title">Preferensi & Kontrol Sistem (Modern Controls)</h4>
+                        <p class="registry-subtitle">Sakelar toggle interaktif dan tombol radio untuk mengonfigurasi perilaku sistem dan antarmuka.</p>
+                      </div>
+                    </div>
+                    <div class="preferences-grid">
+                      <!-- Toggle 1: Kernel Watchdog -->
+                      <div class="preference-toggle-item">
+                        <div class="pref-toggle-info">
+                          <span class="pref-title">Kernel Watchdog Otomatis</span>
+                          <span class="pref-desc">Memantau folder unduhan dan mendeteksi berkas baru secara realtime.</span>
+                        </div>
+                        <label class="modern-toggle-switch">
+                          <input type="checkbox" id="toggleWatchdog" class="modern-toggle-input" checked onchange="handlePreferenceToggle('watchdog', this.checked)">
+                          <span class="modern-toggle-slider"></span>
+                        </label>
+                      </div>
+
+                      <!-- Toggle 2: AI Decide Safe-Delete -->
+                      <div class="preference-toggle-item">
+                        <div class="pref-toggle-info">
+                          <span class="pref-title">Proteksi Penghapusan AI Decide</span>
+                          <span class="pref-desc">Mewajibkan verifikasi dan konfirmasi sebelum menghapus berkas fisik ke Recycle Bin.</span>
+                        </div>
+                        <label class="modern-toggle-switch">
+                          <input type="checkbox" id="toggleSafeDelete" class="modern-toggle-input" checked onchange="handlePreferenceToggle('safeDelete', this.checked)">
+                          <span class="modern-toggle-slider"></span>
+                        </label>
+                      </div>
+
+                      <!-- Toggle 3: Realtime Agent Typing -->
+                      <div class="preference-toggle-item">
+                        <div class="pref-toggle-info">
+                          <span class="pref-title">Animasi Mengetik & Step Agent</span>
+                          <span class="pref-desc">Menampilkan proses penalaran bertahap dan animasi teks realtime pada riwayat chat.</span>
+                        </div>
+                        <label class="modern-toggle-switch">
+                          <input type="checkbox" id="toggleTypingAnim" class="modern-toggle-input" checked onchange="handlePreferenceToggle('typingAnim', this.checked)">
+                          <span class="modern-toggle-slider"></span>
+                        </label>
+                      </div>
+
+                      <!-- Toggle 4: Auto-scroll Chat -->
+                      <div class="preference-toggle-item">
+                        <div class="pref-toggle-info">
+                          <span class="pref-title">Auto-Scroll Riwayat Percakapan</span>
+                          <span class="pref-desc">Otomatis menggulir ke pesan terbaru setiap kali agen selesai menjawab.</span>
+                        </div>
+                        <label class="modern-toggle-switch">
+                          <input type="checkbox" id="toggleAutoScroll" class="modern-toggle-input" checked onchange="handlePreferenceToggle('autoScroll', this.checked)">
+                          <span class="modern-toggle-slider"></span>
+                        </label>
+                      </div>
+
+                      <!-- Radio Group: File Explorer View Mode -->
+                      <div class="preference-toggle-item full-width-radio">
+                        <div class="pref-toggle-info">
+                          <span class="pref-title">Mode Tampilan File Explorer</span>
+                          <span class="pref-desc">Pilih gaya tata letak default ketika menavigasi folder dan berkas.</span>
+                        </div>
+                        <div class="modern-radio-group">
+                          <label class="modern-radio-item">
+                            <input type="radio" name="viewModeRadio" class="modern-radio-input" value="smart" checked onchange="handleViewModeChange(this.value)">
+                            <span>Hub Cerdas & Daftar Rinci</span>
+                          </label>
+                          <label class="modern-radio-item">
+                            <input type="radio" name="viewModeRadio" class="modern-radio-input" value="compact" onchange="handleViewModeChange(this.value)">
+                            <span>Tabel Ringkas (Compact)</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   <!-- Full-Width Section: Hyperparameters -->
                   <div class="settings-full-section hyperparams-section">
                     <div class="hyperparams-header">

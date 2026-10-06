@@ -339,16 +339,18 @@ async function handleSemanticActionClick(btn) {
         body: JSON.stringify({ command: actionPayload })
       });
       const data = await res.json();
-      if (data.success) {
+      const outputLower = String(data.output || '').toLowerCase();
+      const isBlocked = outputLower.includes('blocked') || outputLower.includes('error:') || outputLower.includes('[powershell error');
+      if (data.success && !data.error && !isBlocked) {
         btn.className = 'custom-ui-action-btn executed';
         btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Selesai Dijalankan`;
-        showToast("Perintah PowerShell berhasil dieksekusi!");
+        showToast(data.output || "Perintah berhasil dieksekusi!");
         refreshCurrentFolder();
         fetchStorageDetails();
       } else {
         btn.disabled = false;
         btn.innerHTML = originalHtml;
-        showToast(`Gagal: ${data.error || 'Terjadi kesalahan eksekusi'}`);
+        showToast(`Gagal: ${data.error || data.output || 'Terjadi kesalahan eksekusi'}`);
       }
     } catch (e) {
       btn.disabled = false;
@@ -366,12 +368,13 @@ async function handleSemanticActionClick(btn) {
       if (data.success) {
         btn.className = 'custom-ui-action-btn executed';
         btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Berhasil Dihapus`;
-        showToast(`Berkas berhasil dihapus ke Recycle Bin!`);
+        showToast(`Berkas berhasil dipindahkan ke Recycle Bin!`);
         refreshCurrentFolder();
+        fetchStorageDetails();
       } else {
         btn.disabled = false;
         btn.innerHTML = originalHtml;
-        showToast(`Gagal hapus: ${data.error}`);
+        showToast(`Gagal hapus: ${data.error || 'Operasi penghapusan gagal'}`);
       }
     } catch (e) {
       btn.disabled = false;
@@ -2898,3 +2901,5 @@ function addCustomModelToFavorites() {
   showToast(`Model '${val}' ditambahkan ke dropdown.`);
   input.value = '';
 }
+
+// ========================================================

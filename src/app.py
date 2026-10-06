@@ -369,11 +369,39 @@ class ActionExecuteRequest(BaseModel):
 
 @app.post("/api/action/execute")
 def api_action_execute(req: ActionExecuteRequest):
-    """Executes verified action (e.g. PowerShell command) from semantic chat button."""
+    """Executes verified action (PowerShell command or confirmed file deletion) from semantic chat button."""
+    import re
     cmd = req.command.strip()
     if not cmd:
         return {"success": False, "error": "Command is empty"}
+
+    cmd_lower = cmd.lower()
+    # If the user clicked a confirmed deletion command (Remove-Item / del)
+    if any(k in cmd_lower for k in ['remove-item', 'del ', 'rmdir ', 'erase ']):
+        match = re.search(r"""-(?:LiteralPath|Path)?\s*['"]([^'"]+)['"]""", cmd, re.IGNORECASE)
+        target_path = match.group(1) if match else None
+        if not target_path:
+            match_raw = re.search(r"""['"]([a-zA-Z]:\[^'"]+)['"]""", cmd)
+            if match_raw:
+                target_path = match_raw.group(1)
+        if not target_path:
+            match_unquoted = re.search(r"(?:remove-item|del|rmdir)\s+([a-zA-Z]:\[^\s]+)", cmd, re.IGNORECASE)
+            if match_unquoted:
+                target_path = match_unquoted.group(1)
+
+        if target_path:
+            if not os.path.exists(target_path):
+                return {"success": True, "output": f"Berkas '{target_path}' sudah tidak ada."}
+            del_res = delete_item(target_path, force=True)
+            if del_res.get('success'):
+                return {"success": True, "output": f"Berkas '{target_path}' berhasil dipindahkan ke Recycle Bin."}
+            else:
+                return {"success": False, "error": del_res.get('error', 'Gagal menghapus berkas.')}
+
+    # Standard execution for non-delete commands
     res = agent_runner.toolbox.powershell_exec(cmd)
+    if res.startswith("Error:") or res.startswith("BLOCKED BY") or res.startswith("[PowerShell Error"):
+        return {"success": False, "error": res}
     return {"success": True, "output": res}
 
 @app.get("/api/storage/details")

@@ -192,7 +192,7 @@ def move_item(src_path, dst_dir, new_name=None, force=False):
 
 def delete_item(item_path, force=False):
     if not os.path.exists(item_path):
-        return {'error': 'Path tidak ditemukan'}
+        return {'success': False, 'error': f'Path tidak ditemukan: {item_path}'}
         
     safety = ai_decide_engine.evaluate(item_path, 'DELETE')
     if safety['decision'] == 'PROTECT' and not force:
@@ -213,10 +213,23 @@ def delete_item(item_path, force=False):
 
     try:
         send2trash.send2trash(item_path)
+        # Verify removal
+        if os.path.exists(item_path):
+            try:
+                if os.path.isdir(item_path):
+                    shutil.rmtree(item_path)
+                else:
+                    os.remove(item_path)
+            except Exception as e_rm:
+                return {'success': False, 'error': f'Gagal menghapus berkas: {e_rm}'}
+
+        if os.path.exists(item_path):
+            return {'success': False, 'error': 'Berkas masih ada setelah dieksekusi.'}
+
         activity_tracker.record_event('delete', f'Penghapusan: {os.path.basename(item_path)}', 'Dipindahkan ke Windows Recycle Bin', icon='trash-2', target_path=item_path)
         return {'success': True, 'message': 'Dipindahkan ke Windows Recycle Bin', 'safety': safety}
     except Exception as e:
-        return {'error': str(e)}
+        return {'success': False, 'error': str(e)}
 
 def open_in_windows_explorer(target_path):
     if not os.path.exists(target_path):
