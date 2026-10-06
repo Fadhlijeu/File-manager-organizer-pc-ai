@@ -1981,14 +1981,47 @@ a {
 .file-ext-badge.txt { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
 .file-ext-badge.other { background: #f1f2f4; color: #4b5563; border: 1px solid #e5e7eb; }
 
+.tree-file-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  transition: background 0.12s ease;
+}
+
+.tree-file-item:hover {
+  background: #f8fafc;
+}
+
 .tree-file-item .file-name {
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-primary);
+  user-select: text;
+}
+
+.tree-file-item .file-size {
+  font-size: 10.5px;
+  color: var(--color-muted);
   font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--color-text);
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+
+.tree-file-item .file-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .tree-file-item .file-size {
@@ -2407,4 +2440,183 @@ a {
   color: #15803d !important;
   cursor: default;
   pointer-events: none;
+}
+
+/* ========================================================
+   ENHANCED FILE TREE & CONTEXTUAL ACTION MENU
+   ======================================================== */
+.tree-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.btn-tree-menu {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  border: 1px solid var(--color-border);
+  background: #ffffff;
+  color: var(--color-secondary);
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.12s ease;
+}
+
+.btn-tree-menu:hover {
+  background: #f1f5f9;
+  color: var(--color-primary);
+  border-color: #cbd5e1;
+}
+
+/* Floating Contextual Dropdown Menu */
+.tree-dropdown-menu {
+  position: fixed;
+  z-index: 10000;
+  background: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  padding: 4px;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: menuFadeIn 0.12s ease-out;
+}
+
+@keyframes menuFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.tree-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--color-primary);
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: background 0.1s ease;
+}
+
+.tree-menu-item:hover {
+  background: #f1f5f9;
+}
+
+.tree-menu-item.danger {
+  color: #b91c1c;
+}
+
+.tree-menu-item.danger:hover {
+  background: #fef2f2;
+}
+
+.tree-menu-item svg {
+  flex-shrink: 0;
+}
+
+/* ========================================================
+   AGENT LIVE STATUS BANNERS & REALTIME EVENTS
+   ======================================================== */
+.agent-status-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  margin-bottom: 8px;
+  animation: bannerFade 0.2s ease;
+}
+
+@keyframes bannerFade {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.agent-status-banner.rate-limit {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+}
+
+.agent-status-banner.switching {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1e40af;
+}
+
+.agent-status-banner.retrying {
+  background: #fefce8;
+  border: 1px solid #fef08a;
+  color: #854d0e;
+}
+
+.agent-status-banner.recovered {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+}
+
+.agent-countdown-chip {
+  background: rgba(0, 0, 0, 0.08);
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.live-steps-container {
+  margin-top: 6px;
+  margin-bottom: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.live-step-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+  font-size: 11.5px;
+  color: var(--color-primary);
+  transition: all 0.15s ease;
+}
+
+.live-step-chip.running {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.live-step-chip.done {
+  border-color: #86efac;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.live-step-chip .step-tool-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: rgba(0, 0, 0, 0.06);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 600;
 }

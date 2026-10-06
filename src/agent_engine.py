@@ -132,8 +132,8 @@ class AgentToolbox:
 
     @staticmethod
     def search(path: str, pattern: str, max_results: int = 30) -> str:
-        """Searches files by name or glob pattern."""
-        cmd = f"Get-ChildItem -Path '{path}' -Recurse -Filter '*{pattern}*' -ErrorAction SilentlyContinue | Select-Object -First {max_results} FullName, Length"
+        """Searches files by name or glob pattern with fast exclusion of deep bloat directories."""
+        cmd = f"$ex = @('node_modules', '.git', 'venv', '.venv', 'AppData', 'SteamLibrary', 'build', 'dist'); Get-ChildItem -Path '{path}' -Recurse -Filter '*{pattern}*' -ErrorAction SilentlyContinue | Where-Object {{ $p = $_.FullName; -not ($ex | Where-Object {{ $p -match [regex]::Escape($_) }}) }} | Select-Object -First {max_results} FullName, Length"
         return AgentToolbox.powershell_exec(cmd, cwd=path)
 
     @staticmethod
@@ -316,9 +316,17 @@ class AutonomousAgent:
     ReAct Autonomous Loop for File Management.
     Iteratively plans, observes host state via PowerShell/tools, and executes tasks.
     """
-    def __init__(self, ai_engine):
+    def __init__(self, ai_engine, broadcaster=None):
         self.ai_engine = ai_engine
+        self.broadcaster = broadcaster
         self.toolbox = AgentToolbox()
+
+    def broadcast(self, payload: dict):
+        if self.broadcaster:
+            try:
+                self.broadcaster(payload)
+            except Exception:
+                pass
 
     def run(self, user_prompt: str, current_path: str = "D:\\", mentioned_items: List[str] = None, model_override: str = None, provider_override: str = None, history: List[dict] = None) -> Dict[str, Any]:
         mentioned_items = mentioned_items or []
@@ -557,6 +565,16 @@ Semester 3KA31 | 22 | 17.3% materi perkuliahan | #d97706
             full_prompt = current_prompt
             if conversation_history:
                 full_prompt += "\n\nRiwayat Interaksi Sebelumnya:\n" + "\n".join(conversation_history)
+
+            # Real-time event: agent thinking
+            self.broadcast({
+                "type": "agent_step",
+                "step": turn,
+                "total_steps": max_turns,
+                "status": "thinking",
+                "thought": f"Giliran ke-{turn}: Mengamati data host & merumuskan tindakan...",
+                "tool": "thinking"
+            })
             
             raw_response = self.ai_engine.call_llm(full_prompt, system_instruction=system_instruction, model_override=model_override, provider_override=provider_override)
             if not raw_response or raw_response == 'LOCAL_HEURISTIC_MODE':
@@ -647,6 +665,17 @@ Semester 3KA31 | 22 | 17.3% materi perkuliahan | #d97706
                     'actions_taken': actions_taken
                 }
 
+            # Real-time event: Action planned & executing
+            self.broadcast({
+                "type": "agent_step",
+                "step": turn,
+                "total_steps": max_turns,
+                "status": "executing",
+                "thought": thought,
+                "tool": action,
+                "args": args
+            })
+
             # Execute tool
             output = self._execute_tool(action, args, current_path, user_prompt=user_prompt)
             events.append({
@@ -657,12 +686,25 @@ Semester 3KA31 | 22 | 17.3% materi perkuliahan | #d97706
                 'output': output[:600] + ('...' if len(output) > 600 else '')
             })
 
+            # Real-time event: Step completed
+            self.broadcast({
+                "type": "agent_step_done",
+                "step": turn,
+                "tool": action,
+                "output": output[:300] if output else "(Eksekusi selesai)",
+                "status": "done"
+            })
+
             if action in ['safe_move', 'safe_rename', 'safe_delete', 'create_folder']:
                 actions_taken.append({'action': action, 'args': args, 'result': output})
 
             # Append to history
             history_entry = f"Turn {turn}:\nThought: {thought}\nAction: {action}({json.dumps(args)})\nObservation: {output[:1500]}"
             conversation_history.append(history_entry)
+
+            # Pacing throttle to prevent tripping TPM / RPM limits
+            import time as _t
+            _t.sleep(1.2)
 
         # Max turns reached, synthesize final answer
         synthesis_prompt = f"Berdasarkan seluruh hasil investigasi tools berikut:\n" + "\n".join(conversation_history) + f"\n\nSajikan jawaban akhir lengkap dalam format Markdown untuk pertanyaan pengguna: '{user_prompt}'."

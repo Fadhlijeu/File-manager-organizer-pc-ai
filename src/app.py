@@ -46,16 +46,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize engines
-ai_engine = AIEngine(CONFIG_PATH)
-queue_mgr = FileQueueManager(ai_engine)
-agent_runner = AutonomousAgent(ai_engine)
-
-# Watcher initialization
-config = ai_engine.config
-watch_paths = config.get('watch_paths', [r'D:\DOWNLOAD', r'C:\Users\fadhl\OneDrive\Documents'])
-watcher = MultiPathWatcher(queue_mgr, watch_paths)
-
 # WebSocket Connections manager
 class ConnectionManager:
     def __init__(self):
@@ -70,13 +60,47 @@ class ConnectionManager:
             self.active_connections.remove(websocket)
 
     async def broadcast(self, message: dict):
-        for conn in self.active_connections:
+        for conn in list(self.active_connections):
             try:
                 await conn.send_json(message)
             except Exception:
                 pass
 
 ws_manager = ConnectionManager()
+main_loop = None
+
+def broadcast_sync(message: dict):
+    """Thread-safe WebSocket broadcaster callable from sync functions and engines."""
+    global main_loop
+    loop = main_loop
+    if not loop:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = None
+    if loop and loop.is_running():
+        try:
+            asyncio.run_coroutine_threadsafe(ws_manager.broadcast(message), loop)
+            return
+        except Exception:
+            pass
+    try:
+        threading.Thread(target=lambda: asyncio.run(ws_manager.broadcast(message)), daemon=True).start()
+    except Exception:
+        pass
+
+# Initialize engines with real-time WebSocket broadcaster
+ai_engine = AIEngine(CONFIG_PATH, broadcaster=broadcast_sync)
+queue_mgr = FileQueueManager(ai_engine)
+agent_runner = AutonomousAgent(ai_engine, broadcaster=broadcast_sync)
+
+# Watcher initialization
+config = ai_engine.config
+watch_paths = config.get('watch_paths', [r'D:\DOWNLOAD', r'C:\Users\fadhl\OneDrive\Documents'])
+watcher = MultiPathWatcher(queue_mgr, watch_paths)
 
 def on_queue_event(event_type, item):
     loop = None
@@ -107,6 +131,14 @@ def _deferred_initial_scan():
 
 @app.on_event("startup")
 def startup_event():
+    global main_loop
+    try:
+        main_loop = asyncio.get_running_loop()
+    except Exception:
+        try:
+            main_loop = asyncio.get_event_loop()
+        except Exception:
+            pass
     watcher.start()
     # Server responds instantly; scan happens in background after 2s
     threading.Thread(target=_deferred_initial_scan, daemon=True).start()
@@ -296,6 +328,21 @@ class OpenExplorerRequest(BaseModel):
 @app.post("/api/crud/open-explorer")
 def api_open_explorer(req: OpenExplorerRequest):
     return open_in_windows_explorer(req.path)
+
+class OpenFileRequest(BaseModel):
+    path: str
+
+@app.post("/api/crud/open-file")
+def api_open_file(req: OpenFileRequest):
+    """Opens target file directly in default Windows application (e.g. Acrobat Reader, Word, Excel)."""
+    target = req.path.strip()
+    if not os.path.exists(target):
+        return {"success": False, "error": f"Berkas tidak ditemukan: {target}"}
+    try:
+        os.startfile(target)
+        return {"success": True, "message": "Berkas dibuka dengan aplikasi bawaan Windows."}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 class ChatRequest(BaseModel):
     message: str

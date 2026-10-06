@@ -1,4 +1,268 @@
 
+/* ========================================================
+   LIVE REALTIME AGENT STATUS & STEP STREAMING CONTROLLER
+   ======================================================== */
+function handleLiveAgentWsEvent(msg) {
+  const thinkingBox = document.getElementById('agentThinkingBox');
+  if (!thinkingBox) return;
+
+  if (msg.type === 'agent_status') {
+    let banner = document.getElementById('agentLiveStatusBanner');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'agentLiveStatusBanner';
+      thinkingBox.prepend(banner);
+    }
+
+    if (msg.status === 'model_error' || msg.status === 'retrying') {
+      banner.className = 'agent-status-banner rate-limit';
+      const countdownHtml = msg.countdown ? `<span class="agent-countdown-chip">${msg.countdown}s</span>` : '';
+      banner.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <div style="flex:1;">
+          <strong>Pemberitahuan Model:</strong> ${escapeHtml(msg.message)}
+        </div>
+        ${countdownHtml}
+      `;
+    } else if (msg.status === 'switching_provider') {
+      banner.className = 'agent-status-banner switching';
+      banner.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+        <div style="flex:1;">
+          <strong>Auto Failover:</strong> ${escapeHtml(msg.message)}
+        </div>
+      `;
+    } else if (msg.status === 'recovered') {
+      banner.className = 'agent-status-banner recovered';
+      banner.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        <div style="flex:1;">
+          <strong>Status Normal:</strong> ${escapeHtml(msg.message)}
+        </div>
+      `;
+      setTimeout(() => { if (banner) banner.remove(); }, 3500);
+    }
+  } else if (msg.type === 'agent_step') {
+    let stepsContainer = document.getElementById('agentLiveStepsContainer');
+    if (!stepsContainer) {
+      stepsContainer = document.createElement('div');
+      stepsContainer.id = 'agentLiveStepsContainer';
+      stepsContainer.className = 'live-steps-container';
+      thinkingBox.appendChild(stepsContainer);
+    }
+
+    let stepChip = document.getElementById(`liveStepChip-${msg.step}`);
+    if (!stepChip) {
+      stepChip = document.createElement('div');
+      stepChip.id = `liveStepChip-${msg.step}`;
+      stepChip.className = 'live-step-chip running';
+      stepsContainer.appendChild(stepChip);
+    }
+    const toolLabel = msg.tool && msg.tool !== 'thinking' ? `<span class="step-tool-badge">${escapeHtml(msg.tool)}</span>` : '';
+    stepChip.innerHTML = `
+      <span class="agent-pulse-dot" style="width:7px; height:7px;"></span>
+      <span><strong>Langkah ${msg.step}:</strong> ${escapeHtml(msg.thought || 'Memproses instruksi...')}</span>
+      ${toolLabel}
+    `;
+    const box = document.getElementById('chatHistoryBox');
+    if (box) box.scrollTop = box.scrollHeight;
+  } else if (msg.type === 'agent_step_done') {
+    let stepChip = document.getElementById(`liveStepChip-${msg.step}`);
+    if (stepChip) {
+      stepChip.className = 'live-step-chip done';
+      stepChip.innerHTML = `
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#15803d" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+        <span><strong>Langkah ${msg.step} Selesai:</strong> ${escapeHtml(msg.output || 'Tereksekusi')}</span>
+      `;
+    }
+  }
+}
+
+/* ========================================================
+   FILE TREE CONTEXTUAL MENU & ACTION CONTROLLERS
+   ======================================================== */
+let activeTreeContextMenuEl = null;
+
+function closeTreeContextMenu() {
+  if (activeTreeContextMenuEl) {
+    activeTreeContextMenuEl.remove();
+    activeTreeContextMenuEl = null;
+  }
+}
+
+document.addEventListener('click', (e) => {
+  if (activeTreeContextMenuEl && !activeTreeContextMenuEl.contains(e.target) && !e.target.closest('.btn-tree-menu')) {
+    closeTreeContextMenu();
+  }
+});
+
+function openTreeContextMenu(btn, event) {
+  event.stopPropagation();
+  event.preventDefault();
+  closeTreeContextMenu();
+
+  const type = btn.getAttribute('data-type') || 'file';
+  const name = btn.getAttribute('data-name') || '';
+  const path = btn.getAttribute('data-path') || '';
+
+  const menu = document.createElement('div');
+  menu.className = 'tree-dropdown-menu';
+
+  if (type === 'file') {
+    menu.innerHTML = `
+      <button type="button" class="tree-menu-item" onclick="treeActionMentionFromMenu('${escapeHtml(type)}', '${escapeHtml(name)}')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></svg>
+        <span>Tandai @file di Chat</span>
+      </button>
+      <button type="button" class="tree-menu-item" onclick="treeActionOpenFile('${escapeHtml(path)}')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        <span>Buka Berkas (Default App)</span>
+      </button>
+      <button type="button" class="tree-menu-item" onclick="treeActionOpenExplorer('${escapeHtml(path)}')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+        <span>Buka di Windows Explorer</span>
+      </button>
+      <button type="button" class="tree-menu-item" onclick="treeActionCopyText('${escapeHtml(path || name)}')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        <span>Salin Path Lengkap</span>
+      </button>
+      <button type="button" class="tree-menu-item danger" onclick="treeActionDelete('${escapeHtml(path || name)}')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        <span>Hapus ke Recycle Bin</span>
+      </button>
+    `;
+  } else {
+    menu.innerHTML = `
+      <button type="button" class="tree-menu-item" onclick="treeActionMentionFromMenu('${escapeHtml(type)}', '${escapeHtml(name)}')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></svg>
+        <span>Tandai @folder di Chat</span>
+      </button>
+      <button type="button" class="tree-menu-item" onclick="treeActionNavigateFolder('${escapeHtml(path || name)}')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        <span>Buka di Tab Explorer Web</span>
+      </button>
+      <button type="button" class="tree-menu-item" onclick="treeActionOpenExplorer('${escapeHtml(path || name)}')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+        <span>Buka di Windows Explorer</span>
+      </button>
+      <button type="button" class="tree-menu-item" onclick="treeActionCopyText('${escapeHtml(path || name)}')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        <span>Salin Path Folder</span>
+      </button>
+    `;
+  }
+
+  document.body.appendChild(menu);
+  activeTreeContextMenuEl = menu;
+
+  const rect = btn.getBoundingClientRect();
+  const menuWidth = 190;
+  let left = rect.right - menuWidth;
+  if (left < 10) left = rect.left;
+  let top = rect.bottom + 4;
+  if (top + 180 > window.innerHeight) {
+    top = rect.top - 170;
+  }
+
+  menu.style.left = `${Math.max(10, left)}px`;
+  menu.style.top = `${Math.max(10, top)}px`;
+}
+
+function treeActionMention(btn) {
+  const type = btn.getAttribute('data-type') || 'file';
+  const name = btn.getAttribute('data-name') || '';
+  treeActionMentionFromMenu(type, name);
+}
+
+function treeActionMentionFromMenu(type, name) {
+  closeTreeContextMenu();
+  const safeName = name.includes(' ') ? `"${name}"` : name;
+  insertTokenIntoChat(`@${type}:${safeName} `);
+  showToast(`Ditandai: @${type}:${safeName}`);
+}
+
+function treeActionCopy(btn) {
+  const path = btn.getAttribute('data-path') || btn.getAttribute('data-name') || '';
+  treeActionCopyText(path);
+}
+
+function treeActionCopyText(text) {
+  closeTreeContextMenu();
+  navigator.clipboard.writeText(text).then(() => {
+    showToast(`Disalin ke clipboard: ${text}`);
+  });
+}
+
+async function treeActionOpenFile(path) {
+  closeTreeContextMenu();
+  if (!path) return;
+  try {
+    const res = await fetch('/api/crud/open-file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: path })
+    });
+    const d = await res.json();
+    if (d.success) {
+      showToast(`Membuka berkas: ${path}`);
+    } else {
+      showToast(`Gagal membuka: ${d.error || 'Terjadi kesalahan'}`);
+    }
+  } catch(e) {
+    showToast(`Error: ${e.message}`);
+  }
+}
+
+async function treeActionOpenExplorer(path) {
+  closeTreeContextMenu();
+  if (!path) return;
+  try {
+    const res = await fetch('/api/crud/open-explorer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: path })
+    });
+    const d = await res.json();
+    if (d.success) {
+      showToast(`Membuka di Windows Explorer.`);
+    } else {
+      showToast(`Gagal: ${d.error || 'Terjadi kesalahan'}`);
+    }
+  } catch(e) {
+    showToast(`Error: ${e.message}`);
+  }
+}
+
+function treeActionNavigateFolder(path) {
+  closeTreeContextMenu();
+  if (!path) return;
+  navigatePath(path);
+  showToast(`Membuka folder: ${path}`);
+}
+
+async function treeActionDelete(path) {
+  closeTreeContextMenu();
+  if (!path) return;
+  if (!confirm(`Apakah Anda yakin ingin memindahkan berkas berikut ke Recycle Bin?\n\n${path}`)) return;
+  try {
+    const res = await fetch('/api/crud/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: path, force: true })
+    });
+    const d = await res.json();
+    if (d.success) {
+      showToast("Berkas berhasil dipindahkan ke Recycle Bin.");
+      refreshCurrentFolder();
+    } else {
+      showToast(`Gagal: ${d.error || 'Tidak dapat menghapus berkas'}`);
+    }
+  } catch(e) {
+    showToast(`Error: ${e.message}`);
+  }
+}
+
+
 // Semantic Action Buttons Builder in Chat
 function renderCustomActionButtonsFromText(body) {
   const lines = body.trim().split('\n');
@@ -299,6 +563,8 @@ function initWebSocket() {
         if (msg.event === "file_added" || msg.event === "queue_updated") {
           fetchQueue();
           showToast(`Berkas baru masuk ke antrean: ${msg.filename || 'Item'}`);
+        } else if (msg.type === "agent_step" || msg.type === "agent_step_done" || msg.type === "agent_status") {
+          handleLiveAgentWsEvent(msg);
         }
       } catch (e) {}
     };
@@ -993,6 +1259,9 @@ async function saveAllSettingsForm() {
    6. File Explorer View
    ======================================================== */
 async function navigatePath(targetPath) {
+  if (activeTab !== 'folders') {
+    switchNav('folders');
+  }
   currentPath = targetPath;
   renderBreadcrumbs(currentPath);
 
@@ -1382,7 +1651,23 @@ async function handleChatSubmit(e) {
     }
   } catch (err) {
     if (liveAgentPhaseTimer) { clearInterval(liveAgentPhaseTimer); liveAgentPhaseTimer = null; }
-    aiBubble.innerHTML = `<span style="color: var(--color-danger);">Error komunikasi: ${escapeHtml(err.message)}</span>`;
+    aiBubble.innerHTML = `
+      <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 12px; margin-top: 4px;">
+        <div style="display: flex; align-items: center; gap: 8px; color: #991b1b; font-weight: 600; font-size: 13px; margin-bottom: 6px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span>Kendala Komunikasi Jaringan / Host (${escapeHtml(err.message)})</span>
+        </div>
+        <p style="font-size: 11.5px; color: #7f1d1d; margin: 0 0 10px 0; line-height: 1.5;">
+          Permintaan ke backend lokal (<code>http://127.0.0.1:8765/api/ai/chat</code>) tidak dapat diselesaikan. Kemungkinan server sedang menjalankan query pencarian berkas besar di disk atau sedang mengalami batasan kuota TPM/RPM pada provider LLM.
+        </p>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" class="custom-ui-action-btn primary" onclick="sendQuickPrompt('${escapeHtml(fullMessage.replace(/'/g, "\\'"))}')">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            <span>Kirim Ulang Permintaan</span>
+          </button>
+        </div>
+      </div>
+    `;
   }
   box.scrollTop = box.scrollHeight;
   initLucide();
@@ -1538,10 +1823,10 @@ function renderCustomStatsGridFromText(body) {
   return `<div class="custom-ui-metric-grid">${cards.join('')}</div>`;
 }
 
-// Interactive Hierarchical File Tree Renderer with Functional Collapse / Expand Dropdown
+// Interactive Hierarchical File Tree Renderer with Non-Truncated Names & Action Menus
 function renderCustomFileTreeFromText(body) {
   const lines = body.trim().split('\n');
-  const stack = [{ indent: -1, children: [] }];
+  const stack = [{ indent: -1, fullPath: currentPath, children: [] }];
   let fileCount = 0;
 
   lines.forEach(line => {
@@ -1563,13 +1848,22 @@ function renderCustomFileTreeFromText(body) {
       fileCount++;
     }
 
-    const node = { indent, isDir, name, size, children: [] };
-
     // Pop stack until parent has smaller indent
     while (stack.length > 1 && stack[stack.length - 1].indent >= indent) {
       stack.pop();
     }
-    stack[stack.length - 1].children.push(node);
+
+    const parent = stack[stack.length - 1];
+    let fullPath = '';
+    if (name.includes(':\\') || name.startsWith('\\\\')) {
+      fullPath = name;
+    } else {
+      const parentP = parent.fullPath || currentPath;
+      fullPath = parentP ? (parentP.endsWith('\\') ? parentP + name : parentP + '\\' + name) : name;
+    }
+
+    const node = { indent, isDir, name, size, fullPath, children: [] };
+    parent.children.push(node);
     if (isDir) {
       stack.push(node);
     }
@@ -1590,11 +1884,15 @@ function renderCustomFileTreeFromText(body) {
       if (node.isDir) {
         const subCount = countDescendants(node);
         out += `<div class="tree-folder-group" data-open="true">` +
-               `<div class="tree-folder-title" onclick="toggleTreeGroup(this)">` +
-               `<svg class="tree-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transform: rotate(90deg); transition: transform 0.15s ease;"><polyline points="9 18 15 12 9 6"/></svg>` +
-               `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>` +
-               `<span>${escapeHtml(node.name)}</span>` +
-               `<span style="font-size: 10px; color: var(--color-muted); margin-left: 4px;">(${subCount} berkas)</span>` +
+               `<div class="tree-folder-title">` +
+               `<svg class="tree-chevron" onclick="toggleTreeGroup(this.parentElement)" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transform: rotate(90deg); transition: transform 0.15s ease;"><polyline points="9 18 15 12 9 6"/></svg>` +
+               `<svg onclick="toggleTreeGroup(this.parentElement)" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>` +
+               `<span onclick="toggleTreeGroup(this.parentElement)" style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(node.name)}">${escapeHtml(node.name)}</span>` +
+               `<span style="font-size: 10px; color: var(--color-muted); margin-left: 4px; margin-right: 6px; flex-shrink: 0;">(${subCount} berkas)</span>` +
+               `<div class="tree-item-actions">` +
+               `<button type="button" class="btn-tree-action" onclick="treeActionMention(this)" data-type="folder" data-name="${escapeHtml(node.name)}" data-path="${escapeHtml(node.fullPath)}" title="Tandai target mention @folder">@</button>` +
+               `<button type="button" class="btn-tree-menu" onclick="openTreeContextMenu(this, event)" data-type="folder" data-name="${escapeHtml(node.name)}" data-path="${escapeHtml(node.fullPath)}" title="Menu opsi folder"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg></button>` +
+               `</div>` +
                `</div>` +
                `<div class="tree-folder-children" style="display: block;">` +
                renderTreeNodes(node.children, depth + 1) +
@@ -1602,13 +1900,14 @@ function renderCustomFileTreeFromText(body) {
       } else {
         let ext = node.name.includes('.') ? node.name.split('.').pop().toLowerCase() : 'file';
         let badgeClass = ['xlsx', 'pdf', 'docx', 'py', 'zip', 'txt'].includes(ext) ? ext : 'other';
-        out += `<div class="tree-file-item">` +
+        out += `<div class="tree-file-item" data-path="${escapeHtml(node.fullPath)}" data-name="${escapeHtml(node.name)}">` +
                `<span class="file-ext-badge ${badgeClass}">${escapeHtml(ext)}</span>` +
                `<span class="file-name" title="${escapeHtml(node.name)}">${escapeHtml(node.name)}</span>` +
                (node.size ? `<span class="file-size">${escapeHtml(node.size)}</span>` : '') +
-               `<div class="file-actions">` +
-               `<button type="button" class="btn-tree-action" onclick="copyFilePath('${escapeHtml(node.name.replace(/'/g, "\\'"))}')" title="Salin nama berkas"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` +
-               `<button type="button" class="btn-tree-action" onclick="insertTokenIntoChat('@file:\\"${escapeHtml(node.name.replace(/"/g, '\\"'))}\\" ')" title="Tandai target mention @file">@file</button>` +
+               `<div class="tree-item-actions">` +
+               `<button type="button" class="btn-tree-action" onclick="treeActionMention(this)" data-type="file" data-name="${escapeHtml(node.name)}" data-path="${escapeHtml(node.fullPath)}" title="Tandai target mention @file">@</button>` +
+               `<button type="button" class="btn-tree-action" onclick="treeActionCopy(this)" data-path="${escapeHtml(node.fullPath)}" data-name="${escapeHtml(node.name)}" title="Salin nama/path"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` +
+               `<button type="button" class="btn-tree-menu" onclick="openTreeContextMenu(this, event)" data-type="file" data-name="${escapeHtml(node.name)}" data-path="${escapeHtml(node.fullPath)}" title="Menu opsi berkas"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg></button>` +
                `</div></div>`;
       }
     });

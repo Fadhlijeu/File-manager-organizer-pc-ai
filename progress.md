@@ -197,3 +197,88 @@ D:/PROJECT/File-manager-organizer-pc-ai/
 
 - [x] Validasi server berjalan mulus via `python main.py --server`
 - [x] Lakukan Git commit & push untuk menyimpan arsitektur rapi ke GitHub
+
+---
+
+### SESSION 003 ? 2026-10-06
+
+**Agent**: Antigravity
+**Duration**: ~45 menit
+**Task**: Menu Kontekstual File Tree, Navigasi Tab Explorer Sidebar, Ketahanan Error & Auto-Failover Provider LLM, serta Realtime Step Streaming Agent
+
+#### User Request (Original)
+
+```text
+Nama filenya truncated, kurang menarik, kurang informatif. lalu file dan folder tidak punya tombol menu, tambahkan, isinya bisa "mention, open, open in explorer, open in file explorer, dan lain lain"
+
+lalu saya mengalami error:
+kalau gak salah ada file namanya "base...pdf" isinya untuk testing, kalau bukan base pdf, harusnya "simple...pdf" tolong carikan sampai ketemu
+Error komunikasi: Failed to fetch
+
+coba, apakah permasalahannya karena tpm atau limit lainnya? saya mau kamu buatkan display message error setiap skenario, terus saya mau jika terjadi error, ada display kalau model sedang error, lalu sedang mengalihkan ke model/provider lain, tapi jika tidak ada maka menunggu retry dengan 5-10 detik setiap iterasinya, dan auto resume. lalu coba iterasi loop agent, atau lainnya dikasih jeda agar tidak terkena TPM. event log juga secara realtime memperlihatkan proses AI Agent, contoh sedang langkah pertama, dan semuanya show.
+
+lalu ada error nih, misalnya saya pencet folder kuliah di sidebar, dan saya sedang berada di halaman lain kecuali exxplorer, layar saya tidak teralihkan ke explorer. seharusnya ketika saya berada dimanapun dan klik folder apa saja di sidebar saya akan teralihkan ke explorer.
+```
+
+#### Agent Thinking & Analysis
+
+**Problem Decomposition:**
+1. **Pencarian File PDF Testing**:
+   - Lokasi file testing yang dimaksud user terletak di `D:\DOWNLOAD\Test_Samples\`:
+     - `sample-10mb.pdf` (10 MB, file sampel pengujian)
+     - `sample-50mb.pdf` (50 MB)
+     - `sample-100mb.pdf` (100 MB)
+     - `export_7a2a8c74.pdf`, `export_cc739f9f.pdf`, `export_ea568392.pdf`
+     - Serta pada dokumentasi NDK: `D:\Androidndroid-ndk-r29\simpleperf\doc\introduction.pdf`.
+2. **Penyebab `Failed to fetch`**:
+   - Terjadi karena query pencarian rekursif disk PowerShell sebelumnya mencakup seluruh partisi `D:\` (termasuk ribuan folder game, build, node_modules, android-ndk) sehingga request timeout dari sisi browser.
+   - Panggilan ke model LLM juga dapat memicu timeout atau limit TPM jika terlalu banyak step berturut-turut tanpa jeda.
+3. **Penyempurnaan File Tree & Action Menu**:
+   - Menghapus truncating agresif pada nama file di `frontend/styles.css` dan memperbaiki nesting quote pada event handler.
+   - Menambahkan menu popup 3 titik (`...`) untuk file dan folder dengan aksi:
+     - File: Tandai `@file:`, Buka Berkas (Default App via `os.startfile`), Buka di Windows Explorer (`explorer.exe /select,`), Salin Path Lengkap, Hapus ke Recycle Bin (`send2trash`).
+     - Folder: Tandai `@folder:`, Buka di Tab Explorer Web, Buka di Windows Explorer, Salin Path Folder.
+4. **Resiliensi Model LLM & Diagnostik Skenario**:
+   - Klasifikasi error: `RATE_LIMIT_429`, `SERVER_ERROR_5XX`, `AUTH_ERROR_401`, `TIMEOUT_ERROR`.
+   - Mekanisme **Auto-Failover** antar provider (Gemini, OpenRouter, Groq, OpenAI, Ollama).
+   - Mekanisme **Auto-Retry** berhitung mundur 5?10 detik live via WebSocket banner dengan auto-resume.
+   - Pacing throttle (`time.sleep(1.2)`) antar iterasi ReAct loop agent agar terhindar dari batas TPM/RPM.
+   - Real-time streaming langkah AI agent (`agent_step` dan `agent_step_done`) ke UI thinking box.
+5. **Navigasi Sidebar ke Explorer**:
+   - Pada `navigatePath(targetPath)`, tambahkan pemeriksaan `if (activeTab !== 'folders') switchNav('folders');` sehingga klik folder dari sidebar langsung mengalihkan tampilan ke Explorer.
+
+#### Actions Taken
+
+- [x] Menemukan file testing PDF di `D:\DOWNLOAD\Test_Samples\sample-10mb.pdf` (dan varian 50mb, 100mb).
+- [x] Memperbarui `src/app.py`:
+  - Menambahkan broadcaster thread-safe `broadcast_sync` untuk WebSocket.
+  - Menambahkan endpoint `@app.post("/api/crud/open-file")` untuk membuka file langsung di default app Windows.
+- [x] Memperbarui `src/ai_engine.py`:
+  - Menambahkan `_execute_provider_http` dengan diagnostik detail setiap skenario error HTTP.
+  - Menambahkan multi-provider auto-failover ketika provider utama gagal.
+  - Menambahkan countdown retry loop (5?10s) dan siaran status via WebSocket.
+- [x] Memperbarui `src/agent_engine.py`:
+  - Mengalirkan event `agent_step` dan `agent_step_done` secara realtime.
+  - Menambahkan pacing delay (1.2 detik) antar langkah loop ReAct.
+  - Membatasi pencarian direktori berat (`node_modules`, `.git`, `venv`, `AppData`, `build`) agar query tidak timeout.
+- [x] Memperbarui `frontend/styles.css`:
+  - Styling menu dropdown pohon berkas `.btn-tree-menu`, `.tree-dropdown-menu`, `.tree-menu-item`.
+  - Styling banner status resiliensi `.agent-status-banner` dan live chips `.live-step-chip`.
+- [x] Memperbarui `frontend/app.js`:
+  - Auto-switch tab ke `'folders'` saat memilih folder dari sidebar.
+  - Renderer pohon berkas interaktif dengan full-path calculation dan menu aksi 3-titik.
+  - Integrasi listener WebSocket untuk notifikasi model error, failover, countdown, dan progress langkah.
+- [x] Menjalankan verifikasi via Browser Subagent untuk klik navigasi folder dan pembukaan menu berkas/folder.
+- [x] Restart server FastAPI pada port 8765 dan verifikasi API status online.
+
+#### Files Modified This Session
+
+```text
+D:/PROJECT/File-manager-organizer-pc-ai/
+??? src/app.py              ? broadcast_sync & /api/crud/open-file endpoint
+??? src/ai_engine.py        ? Scenario error diagnostics, auto-failover, live countdown retry
+??? src/agent_engine.py     ? Real-time step streaming, ReAct pacing throttle, search exclusions
+??? frontend/styles.css     ? Context menu styling, non-truncated tree items, resilience banner
+??? frontend/app.js         ? Auto tab switch, contextual menu controller, WS live agent listener
+??? progress.md             ? Sesi 003 logging
+```
