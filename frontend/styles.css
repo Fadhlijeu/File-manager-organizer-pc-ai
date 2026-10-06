@@ -2610,14 +2610,36 @@ a {
   cursor: pointer;
 }
 
-/* Modern Model Table */
+/* Modern Model Table with Smooth Vertical Scrolling */
 .model-table-container.modern {
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   background: #ffffff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  max-height: 380px;
+  overflow-y: auto !important;
   overflow-x: auto;
-  max-height: 420px;
+  position: relative;
+  scrollbar-gutter: stable;
+}
+
+.model-table-container.modern::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.model-table-container.modern::-webkit-scrollbar-track {
+  background: #f8fafc;
+  border-radius: 4px;
+}
+
+.model-table-container.modern::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.model-table-container.modern::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 .model-manager-table.modern {
@@ -2627,6 +2649,9 @@ a {
 }
 
 .model-manager-table.modern th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
   background: #f8fafc;
   color: #64748b;
   font-size: 10.5px;
@@ -2635,6 +2660,7 @@ a {
   padding: 8px 12px;
   border-bottom: 1px solid #e2e8f0;
   text-transform: uppercase;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
 .model-manager-table.modern td {
