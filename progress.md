@@ -270,6 +270,12 @@ lalu ada error nih, misalnya saya pencet folder kuliah di sidebar, dan saya seda
   - Integrasi listener WebSocket untuk notifikasi model error, failover, countdown, dan progress langkah.
 - [x] Menjalankan verifikasi via Browser Subagent untuk klik navigasi folder dan pembukaan menu berkas/folder.
 - [x] Restart server FastAPI pada port 8765 dan verifikasi API status online.
+- [x] **Penyempurnaan ReAct Loop Agent & UI Event Log Anti-Slop**:
+  - Mengatasi masalah output terpotong dan respons kosong ("Saya akan menjalankan...") dengan menaikkan buffer observasi dari 1.500 ke 10.000 karakter.
+  - Menambahkan validasi `finish` & auto-synthesis fallback di `src/agent_engine.py`: agen wajib menyajikan data riil dan secara otomatis merangkum berkas jika model memanggil finish tanpa jawaban lengkap.
+  - Menghilangkan kontrol internal `finish` dan `thinking` dari log aktivitas pengguna.
+  - Mendesain ulang seluruh UI Event Log di `frontend/app.js` dan `frontend/styles.css`: card langkah modern, pill tool berwarna, drawer terminal bergaya macOS/IDE gelap, serta realtime pulse chips yang bersih dan elegan.
+
 
 #### Files Modified This Session
 

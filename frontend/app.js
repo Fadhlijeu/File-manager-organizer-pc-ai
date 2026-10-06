@@ -43,6 +43,8 @@ function handleLiveAgentWsEvent(msg) {
       setTimeout(() => { if (banner) banner.remove(); }, 3500);
     }
   } else if (msg.type === 'agent_step') {
+    if (msg.tool === 'finish') return; // Do not show internal control flow finish tool
+
     let stepsContainer = document.getElementById('agentLiveStepsContainer');
     if (!stepsContainer) {
       stepsContainer = document.createElement('div');
@@ -58,21 +60,30 @@ function handleLiveAgentWsEvent(msg) {
       stepChip.className = 'live-step-chip running';
       stepsContainer.appendChild(stepChip);
     }
-    const toolLabel = msg.tool && msg.tool !== 'thinking' ? `<span class="step-tool-badge">${escapeHtml(msg.tool)}</span>` : '';
+
+    let cleanThought = (msg.thought || 'Memproses instruksi...').trim();
+    if (cleanThought.length > 85) cleanThought = cleanThought.substring(0, 85) + '...';
+
+    const toolName = msg.tool && msg.tool !== 'thinking' ? msg.tool : 'analisis';
     stepChip.innerHTML = `
-      <span class="agent-pulse-dot" style="width:7px; height:7px;"></span>
-      <span><strong>Langkah ${msg.step}:</strong> ${escapeHtml(msg.thought || 'Memproses instruksi...')}</span>
-      ${toolLabel}
+      <span class="live-chip-status-dot"></span>
+      <span class="live-chip-tool-badge">${escapeHtml(toolName)}</span>
+      <span class="live-chip-text"><strong>Langkah ${msg.step}:</strong> ${escapeHtml(cleanThought)}</span>
     `;
     const box = document.getElementById('chatHistoryBox');
     if (box) box.scrollTop = box.scrollHeight;
   } else if (msg.type === 'agent_step_done') {
+    if (msg.tool === 'finish') return;
+
     let stepChip = document.getElementById(`liveStepChip-${msg.step}`);
     if (stepChip) {
       stepChip.className = 'live-step-chip done';
+      let preview = (msg.output || 'Tereksekusi').trim().replace(/\s+/g, ' ');
+      if (preview.length > 70) preview = preview.substring(0, 70) + '...';
       stepChip.innerHTML = `
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#15803d" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-        <span><strong>Langkah ${msg.step} Selesai:</strong> ${escapeHtml(msg.output || 'Tereksekusi')}</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+        <span class="live-chip-tool-badge done">${escapeHtml(msg.tool || 'selesai')}</span>
+        <span class="live-chip-text"><strong>Langkah ${msg.step} Sukses:</strong> ${escapeHtml(preview)}</span>
       `;
     }
   }
@@ -1674,33 +1685,85 @@ async function handleChatSubmit(e) {
 }
 
 function renderAgentEventAccordion(events) {
-  if (!events || events.length === 0) return '';
-  const count = events.length;
+  if (!events || !Array.isArray(events)) return '';
+  // Strictly filter out internal finish & thinking control flows
+  const realEvents = events.filter(ev => ev.tool && ev.tool !== 'finish' && ev.tool !== 'thinking');
+  if (realEvents.length === 0) return '';
+
+  const count = realEvents.length;
   let stepsHtml = '';
 
-  events.forEach(ev => {
-    const toolArgs = ev.args ? JSON.stringify(ev.args, null, 2) : '';
+  const toolMeta = {
+    powershell_exec: { label: 'PowerShell Host', badgeClass: 'ps', icon: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>` },
+    list_directory: { label: 'Daftar Direktori', badgeClass: 'dir', icon: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>` },
+    search_files: { label: 'Pencarian Berkas', badgeClass: 'search', icon: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>` },
+    read_document: { label: 'Ekstraksi Dokumen', badgeClass: 'doc', icon: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>` },
+    safe_move: { label: 'Pemindahan Berkas', badgeClass: 'move', icon: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>` },
+    safe_delete: { label: 'Recycle Bin', badgeClass: 'del', icon: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>` },
+    create_folder: { label: 'Buat Folder', badgeClass: 'folder', icon: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>` },
+    get_course_catalog: { label: 'Silabus Kuliah', badgeClass: 'course', icon: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>` }
+  };
+
+  realEvents.forEach((ev, idx) => {
+    const meta = toolMeta[ev.tool] || {
+      label: ev.tool,
+      badgeClass: 'default',
+      icon: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>`
+    };
+
+    let cmdSnippet = '';
+    if (ev.tool === 'powershell_exec' && ev.args && ev.args.command) {
+      cmdSnippet = ev.args.command;
+    } else if (ev.tool === 'list_directory' && ev.args && ev.args.path) {
+      cmdSnippet = `Get-ChildItem -Path '${ev.args.path}' ${ev.args.recursive ? '-Recurse' : ''}`;
+    } else if (ev.args && Object.keys(ev.args).length > 0) {
+      cmdSnippet = JSON.stringify(ev.args, null, 2);
+    }
+
+    const outputSnippet = (ev.output || '(Selesai tanpa output)').trim();
+
     stepsHtml += `
-      <div class="agent-step">
-        <div class="agent-step-thought">
-          Langkah ${ev.step}: ${escapeHtml(ev.thought || 'Investigasi host')}
-        </div>
-        <div>
-          <span class="agent-step-tool">
-            ${escapeHtml(ev.tool || 'powershell_exec')}
+      <div class="agent-step-card">
+        <div class="step-card-header">
+          <span class="step-number-chip">${idx + 1}</span>
+          <span class="step-tool-pill ${meta.badgeClass}">
+            ${meta.icon}
+            <span>${escapeHtml(meta.label)}</span>
           </span>
+          <span class="step-thought-text">${escapeHtml(ev.thought || 'Menjalankan operasi host')}</span>
         </div>
-        ${toolArgs ? `<pre style="background: #f8f8f8; padding: 4px 6px; border-radius: 4px; font-size: 10.5px; margin-top: 3px; max-width: 100%; overflow-x: auto;"><code>${escapeHtml(toolArgs)}</code></pre>` : ''}
-        ${ev.output ? `<div class="agent-step-output"><strong>Output:</strong><br>${escapeHtml(ev.output)}</div>` : ''}
+        ${cmdSnippet || outputSnippet ? `
+          <details class="step-terminal-drawer">
+            <summary class="step-terminal-toggle">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+              <span>Detail Eksekusi & Terminal Host</span>
+            </summary>
+            <div class="agent-terminal-box">
+              <div class="terminal-box-bar">
+                <span class="term-dot red"></span>
+                <span class="term-dot yellow"></span>
+                <span class="term-dot green"></span>
+                <span class="term-title">${escapeHtml(ev.tool)}</span>
+              </div>
+              <div class="terminal-content">
+                ${cmdSnippet ? `<div class="term-cmd"><span class="term-prompt">PS &gt;</span> ${escapeHtml(cmdSnippet)}</div>` : ''}
+                <div class="term-out">${escapeHtml(outputSnippet)}</div>
+              </div>
+            </div>
+          </details>
+        ` : ''}
       </div>
     `;
   });
 
   return `
-    <details class="agent-accordion">
-      <summary>
-        <span>Aktivitas Investigasi Agen (${count} langkah)</span>
-        <svg class="agent-accordion-chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <details class="agent-modern-accordion">
+      <summary class="agent-accordion-header">
+        <div class="accordion-header-left">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          <span>Riwayat Investigasi Agen (${count} operasi sistem tereksekusi)</span>
+        </div>
+        <svg class="agent-accordion-chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="6 9 12 15 18 9"/>
         </svg>
       </summary>

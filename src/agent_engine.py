@@ -488,7 +488,7 @@ DAFTAR TOOLS TERSEDIA:
 9. get_course_catalog()
    Mendapatkan silabus lengkap mata kuliah Gunadarma 2KA31 & 3KA31 beserta keyword.
 10. finish(final_answer: str)
-   Gunakan tool ini jika Anda sudah menyelesaikan investigasi atau eksekusi dan siap menyajikan jawaban final lengkap ke pengguna.
+   WAJIB: Gunakan tool ini HANYA jika Anda siap menyajikan jawaban final nyata ke pengguna. Argumen final_answer HARUS berisi data hasil investigasi lengkap (daftar berkas, ukuran, rekapitulasi, atau tabel). DILARANG KERAS memanggil finish dengan args kosong atau dengan final_answer yang hanya berisi janji/rencana tindakan (seperti 'Saya akan menjalankan...').
 
 ATURAN TAMPILAN: DILARANG KERAS MENGGUNAKAN EMOJI APAPUN (seperti folder, file, checklist emoji, dll). Gunakan hanya teks bersih dan simbol markdown standar.
 
@@ -501,6 +501,13 @@ Pada SETIAP giliran (turn), Anda HARUS merespons HANYA dalam format JSON murni b
 }}
 
 ATURAN PENTING & FORMAT JAWABAN AKHIR (UI WIDGETS):
+- PEDOMAN DAFTAR BERKAS & DIREKTORI (SANGAT KRITIS):
+  1. Jika pengguna meminta untuk menyebutkan, mencari, atau menampilkan isi berkas pada folder (contoh: 'sebutkan file yang ada di 3ka31', 'apa saja file di D:\Kuliah'):
+     - PRIORITASKAN MEMANGGIL: `list_directory(path=..., recursive=True)`! Tool ini menghasilkan daftar lengkap tanpa JSON berlebih.
+     - Jika menggunakan `powershell_exec`, JANGAN gunakan `ConvertTo-Json`. Gunakan query ringkas: `Get-ChildItem -Path '...' -Recurse -File | Select-Object Name, Length, FullName`
+  2. KETUNTASAN JAWABAN:
+     - Setelah mendapatkan daftar berkas, panggil `finish(final_answer=...)` dengan menyertakan SELURUH daftar nama berkas, ukuran, dan folder secara tuntas menggunakan widget :::file-tree atau daftar Markdown!
+     - DILARANG KERAS berhenti tanpa menyajikan nama-nama berkas yang diminta!
 - JANGAN PERNAH berasumsi Anda tidak tahu isi file atau folder. Selalu jalankan `powershell_exec` atau `list_directory` untuk memeriksanya!
 - Jika pengguna bertanya 'ada berapa total file perkuliahan', segera jalankan powershell_exec untuk menghitung total dan rincian semester!
 - Jika pengguna meminta 'rapihkan folder ...', amati isi foldernya, baca dokumen jika perlu, pindahkan berkas ke tempat yang tepat, lalu laporkan hasilnya.
@@ -646,19 +653,60 @@ Semester 3KA31 | 22 | 17.3% materi perkuliahan | #d97706
             action = parsed.get('action', 'finish')
             args = parsed.get('args', {})
 
-            # If action is finish, terminate
+            # If action is finish, validate and terminate
             if action == 'finish':
-                final_answer = args.get('final_answer', thought)
-                # Unpack raw json if accidentally returned as final_answer
+                final_answer = args.get('final_answer', '') if isinstance(args, dict) else ''
                 if isinstance(final_answer, dict):
-                    final_answer = final_answer.get('final_answer') or final_answer.get('thought') or str(final_answer)
-                events.append({
-                    'step': turn,
-                    'thought': thought,
-                    'tool': 'finish',
-                    'args': {},
-                    'output': 'Investigasi/Eksekusi selesai.'
-                })
+                    final_answer = final_answer.get('final_answer') or final_answer.get('thought') or ''
+                
+                # Detect invalid, empty, or promise-only answers (e.g. "Saya akan...", "Investigasi host", "{}")
+                is_invalid = (
+                    not final_answer or
+                    len(final_answer.strip()) < 15 or
+                    final_answer.strip().lower() in ['investigasi host', 'finish', '{}', 'selesai', 'investigasi/eksekusi selesai.', 'investigasi selesai.'] or
+                    any(final_answer.strip().lower().startswith(p) for p in ['saya akan', 'akan dijalankan', 'saya berencana', 'output dari powershell', 'output terpotong', 'saya perlu'])
+                )
+
+                if is_invalid:
+                    # Synthesize real answer from conversation history
+                    if conversation_history:
+                        synthesis_prompt = (
+                            f"Pertanyaan Pengguna: {user_prompt}\n\n"
+                            f"Berikut adalah seluruh hasil observasi berkas dari sistem host:\n"
+                            + "\n".join(conversation_history)
+                            + f"\n\nInstruksi Penting: Jawab pertanyaan pengguna secara tuntas dan lengkap berdasarkan data observasi di atas. Sebutkan SEMUA berkas/folder yang ditemukan beserta jalurnya secara rapi menggunakan widget :::file-tree atau daftar Markdown berpoin. JANGAN berjanji akan menjalankan perintah lain, langsung sajikan seluruh informasinya sekarang!"
+                        )
+                        synthesized = self.ai_engine.call_llm(synthesis_prompt, system_instruction="Sajikan laporan berkas yang lengkap, terstruktur, dan tuntas.")
+                        if synthesized and len(synthesized.strip()) > 15:
+                            final_answer = synthesized.strip()
+
+                    # Fallback if no tools were executed and user asked about specific folders
+                    if not final_answer or is_invalid:
+                        prompt_lower = user_prompt.lower()
+                        target_dir = None
+                        if '3ka31' in prompt_lower:
+                            target_dir = r"D:\Kuliah\3KA31"
+                        elif '2ka31' in prompt_lower:
+                            target_dir = r"D:\Kuliah\2KA31"
+                        elif 'kuliah' in prompt_lower:
+                            target_dir = r"D:\Kuliah"
+                        elif 'download' in prompt_lower or 'unduhan' in prompt_lower:
+                            target_dir = r"D:\DOWNLOAD"
+
+                        if target_dir and os.path.exists(target_dir):
+                            auto_list = self.toolbox.list_dir(target_dir, recursive=True, max_items=80)
+                            synthesis_prompt = (
+                                f"Pertanyaan Pengguna: {user_prompt}\n\n"
+                                f"Daftar berkas riil dari direktori {target_dir}:\n{auto_list}\n\n"
+                                f"Sajikan daftar lengkap berkas tersebut secara terstruktur dan informatif menggunakan widget :::file-tree."
+                            )
+                            synthesized = self.ai_engine.call_llm(synthesis_prompt, system_instruction="Sajikan laporan berkas yang lengkap dan terstruktur.")
+                            final_answer = synthesized.strip() if synthesized else auto_list
+
+                if not final_answer:
+                    final_answer = thought if thought else "Investigasi berkas pada direktori selesai."
+
+                # NOTE: Do NOT append internal 'finish' tool to events, so user log remains clean and tool-focused!
                 return {
                     'reply': final_answer,
                     'events': events,
@@ -699,7 +747,7 @@ Semester 3KA31 | 22 | 17.3% materi perkuliahan | #d97706
                 actions_taken.append({'action': action, 'args': args, 'result': output})
 
             # Append to history
-            history_entry = f"Turn {turn}:\nThought: {thought}\nAction: {action}({json.dumps(args)})\nObservation: {output[:1500]}"
+            history_entry = f"Turn {turn}:\nThought: {thought}\nAction: {action}({json.dumps(args)})\nObservation: {output[:10000]}"
             conversation_history.append(history_entry)
 
             # Pacing throttle to prevent tripping TPM / RPM limits
