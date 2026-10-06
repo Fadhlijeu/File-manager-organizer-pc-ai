@@ -250,10 +250,8 @@ def analyze_queue(req: Optional[AnalyzeQueueRequest] = None):
     results = []
     for it in items:
         src = it['path']
-        clf = it.get('classification')
-        if not clf or not clf.get('target_folder'):
-            clf = ai_engine.classify_file(src) or {}
-            it['classification'] = clf
+        clf = ai_engine.classify_file(src) or {}
+        it['classification'] = clf
             
         safety = it.get('safety') or ai_decide_engine.evaluate(src)
         it['safety'] = safety

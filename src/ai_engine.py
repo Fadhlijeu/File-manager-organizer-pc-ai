@@ -83,7 +83,7 @@ class AIEngine:
                 'generationConfig': {'temperature': temperature, 'maxOutputTokens': max_tokens}
             }
             try:
-                r = requests.post(url, json=payload, timeout=25)
+                r = requests.post(url, json=payload, timeout=8)
                 if r.status_code == 200:
                     data = r.json()
                     candidates = data.get('candidates', [])
@@ -98,7 +98,7 @@ class AIEngine:
                 else:
                     return {"success": False, "error_type": "GENERAL_ERROR", "status_code": r.status_code, "error_message": f"Gemini API error ({r.status_code}): {r.text[:150]}"}
             except requests.exceptions.Timeout:
-                return {"success": False, "error_type": "TIMEOUT_ERROR", "error_message": "Koneksi ke Gemini timeout (25s)."}
+                return {"success": False, "error_type": "TIMEOUT_ERROR", "error_message": "Koneksi ke Gemini timeout (8s)."}
             except Exception as e:
                 return {"success": False, "error_type": "NETWORK_ERROR", "error_message": str(e)}
 
@@ -199,7 +199,7 @@ class AIEngine:
 
         return {"success": False, "error_type": "UNKNOWN_PROVIDER", "error_message": f"Provider {prov_key} tidak dikenal."}
 
-    def call_llm(self, prompt, system_instruction='', model_override=None, temperature=0.2, max_tokens=1500, provider_override=None):
+    def call_llm(self, prompt, system_instruction='', model_override=None, temperature=0.2, max_tokens=1500, provider_override=None, allow_retries=True):
         """
         Resilient Multi-Provider LLM Caller with:
         - Scenario-based Error Detection
@@ -208,7 +208,7 @@ class AIEngine:
         """
         prov_key = provider_override.lower().strip() if provider_override else self.active_provider
         prov = self.providers.get(prov_key, {})
-        model = prov.get('model', 'gemini-3.5-flash-lite')
+        model = prov.get('model', 'gemini-flash-latest')
         api_key = prov.get('api_key', '')
 
         # Model override parsing
@@ -290,7 +290,7 @@ class AIEngine:
                 return alt_res["text"]
 
         # If no alternative provider or all failed, run Retry Loop with 5-10s countdown
-        if err_type in ["RATE_LIMIT_429", "SERVER_ERROR_5XX", "TIMEOUT_ERROR"]:
+        if allow_retries and err_type in ["RATE_LIMIT_429", "SERVER_ERROR_5XX", "TIMEOUT_ERROR"]:
             max_attempts = 3
             for attempt in range(1, max_attempts + 1):
                 wait_seconds = 5 + (attempt * 2)  # 7s, 9s, 11s
@@ -338,143 +338,235 @@ class AIEngine:
     def _local_fallback_response(self, prompt):
         return 'LOCAL_HEURISTIC_MODE'
 
-    def classify_file(self, file_path):
-        meta = get_file_metadata(file_path)
-        if not meta:
-            return None
-        content = extract_content(file_path, max_chars=1800)
-        filename = meta['name']
-        ext = meta['extension'].lower()
-        academic_base = self.config.get('academic_base', r'D:\Kuliah')
+    def discover_real_folders(self):
+        """Dynamically scans and discovers all real destination folders in the workspace and user bases."""
+        discovered = []
+        academic_base = self.config.get('academic_base', r'D:\\Kuliah')
         personal_base = self.config.get('personal_base', r'D:\fadhl')
         project_base = self.config.get('project_base', r'D:\PROJECT')
         game_base = self.config.get('game_base', r'D:\Game')
 
-        text_corpus = (filename + ' ' + content).lower()
-        local_match = self._match_academic_rules(text_corpus, filename, ext)
-        if local_match:
-            return local_match
-
-        # Minecraft assets
-        if ext in ['.schem', '.nbt']:
-            return {
-                'category': 'Minecraft Assets',
-                'target_folder': os.path.join(game_base, r'Minecraft Assets\Schematics'),
-                'suggested_name': filename,
-                'summary': 'Minecraft structure schematic file',
-                'confidence': 0.98,
-                'is_draft': False
-            }
-        if ext == '.jar' and any(k in filename.lower() for k in ['neoforge', 'forge', 'fabric', 'mod', '1.21']):
-            return {
-                'category': 'Minecraft Assets',
-                'target_folder': os.path.join(game_base, r'Minecraft Assets\Mods'),
-                'suggested_name': filename,
-                'summary': 'Minecraft game modification JAR package',
-                'confidence': 0.98,
-                'is_draft': False
-            }
-        if ext == '.zip' and any(k in filename.lower() for k in ['shader', 'bsl', 'complementary', 'bliss', 'solas', 'vanilla']):
-            return {
-                'category': 'Minecraft Assets',
-                'target_folder': os.path.join(game_base, r'Minecraft Assets\Shaders'),
-                'suggested_name': filename,
-                'summary': 'Minecraft graphics shaderpack archive',
-                'confidence': 0.98,
-                'is_draft': False
-            }
-
-        # Media
-        if ext in ['.png', '.jpg', '.jpeg', '.webp', '.svg']:
-            if 'ktp' in filename.lower() or 'identitas' in filename.lower():
-                return {
-                    'category': 'Personal Documents',
-                    'target_folder': os.path.join(personal_base, r'Documents\Identitas & Dokumen Resmi'),
-                    'suggested_name': filename,
-                    'summary': 'Dokumen identitas resmi (KTP)',
-                    'confidence': 0.99,
-                    'is_draft': False
-                }
-            return {
-                'category': 'Media & Pictures',
-                'target_folder': os.path.join(personal_base, r'Pictures\Photos & Screenshots'),
-                'suggested_name': filename,
-                'summary': 'File gambar/foto',
-                'confidence': 0.90,
-                'is_draft': False
-            }
-        if ext in ['.mp4', '.mkv', '.avi', '.gif']:
-            return {
-                'category': 'Media & Videos',
-                'target_folder': os.path.join(personal_base, r'Videos'),
-                'suggested_name': filename,
-                'summary': 'File rekaman video / animasi GIF',
-                'confidence': 0.95,
-                'is_draft': False
-            }
-
-        # Software installers
-        if ext in ['.exe', '.msi'] or (ext == '.zip' and any(k in filename.lower() for k in ['installer', 'setup', 'windows'])):
-            return {
-                'category': 'Software Installers',
-                'target_folder': r'D:\DOWNLOAD\Installers',
-                'suggested_name': filename,
-                'summary': 'Paket installer aplikasi Windows',
-                'confidence': 0.95,
-                'is_draft': False
-            }
-
-        # Query LLM
-        prompt = f"""Analisis file berikut dan klasifikasikan ke dalam folder tujuan yang tepat.
-Nama File: {filename}
-Ukuran: {meta['size']} bytes
-Ekstensi: {ext}
-Cuplikan Isi Teks:
-{content[:1000]}
-
-Pilihan Folder Utama:
-- D:\\Kuliah\\3KA31\\<Mata Kuliah> (Pemrograman Berbasis WEB, Metode Penelitian, Jejaring Sosial dan Konten Kreatif, Interaksi Manusia dan Komputer, Sistem Keamanan Teknologi Informasi, Konsep Data Mining, Pengantar Sain Data, Graf dan Analisis Algoritma)
-- D:\\Kuliah\\2KA31\\<Mata Kuliah> (Sistem Operasi, Pemrograman Berorientasi Objek, Riset Operasional, Statistika, Manajemen dan SIM 2, Praktikum Lab)
-- D:\\fadhl\\Documents\\<Kategori>
-- D:\\fadhl\\Music\\Tabs
-- D:\\PROJECT\\<Project>
-- D:\\Game\\Minecraft Assets\\<Shaders/Mods/Schematics>
-- D:\\DOWNLOAD\\Installers
-
-Keluarkan HANYA JSON murni format ini tanpa markdown:
-{{
-  "category": "Kategori ringkas",
-  "target_folder": "Path absolut Windows tujuan",
-  "suggested_name": "Nama file baru yang rapi",
-  "summary": "Ringkasan isi 1 kalimat",
-  "confidence": 0.95,
-  "is_draft": false
-}}"""
-        resp = self.call_llm(prompt)
-        if resp and resp != 'LOCAL_HEURISTIC_MODE':
+        # 1. Academic Folders (e.g. D:\\Kuliah\3KA31\AK011229 - Metode Penelitian)
+        if os.path.exists(academic_base):
             try:
+                for sem in os.listdir(academic_base):
+                    sem_p = os.path.join(academic_base, sem)
+                    if os.path.isdir(sem_p) and not sem.startswith('.'):
+                        for c in os.listdir(sem_p):
+                            cp = os.path.join(sem_p, c)
+                            if os.path.isdir(cp) and not c.startswith('.'):
+                                discovered.append({
+                                    "path": cp,
+                                    "name": c,
+                                    "semester": sem,
+                                    "category": f"Akademik ({sem})",
+                                    "type": "academic"
+                                })
+            except Exception:
+                pass
+
+        # 2. Project Folders
+        if os.path.exists(project_base):
+            try:
+                for pr in os.listdir(project_base):
+                    pr_p = os.path.join(project_base, pr)
+                    if os.path.isdir(pr_p) and not pr.startswith('.'):
+                        discovered.append({
+                            "path": pr_p,
+                            "name": pr,
+                            "category": f"Project ({pr})",
+                            "type": "project"
+                        })
+            except Exception:
+                pass
+
+        # 3. Personal Base
+        if os.path.exists(personal_base):
+            for sub in ["Documents", "Pictures", "Videos", "Music"]:
+                sub_p = os.path.join(personal_base, sub)
+                if os.path.exists(sub_p):
+                    discovered.append({
+                        "path": sub_p,
+                        "name": sub,
+                        "category": f"Pribadi ({sub})",
+                        "type": "personal"
+                    })
+
+        return discovered
+
+    def _semantic_score_folder(self, filename, content, folder_item):
+        folder_name = folder_item['name'].lower()
+        clean_title = re.sub(r'^[a-z0-9]+\s*-\s*', '', folder_name).lower()
+        f_words = [w for w in re.split(r'[^a-z0-9]+', clean_title) if len(w) > 2]
+        
+        corpus = (filename + ' ' + content[:800]).lower()
+        tokens = [t for t in re.split(r'[^a-z0-9]+', corpus) if len(t) > 1]
+        
+        score = 0.0
+        reasons = []
+
+        # 1. Exact word matches
+        for t in tokens:
+            if t in f_words:
+                score += 1.0
+                reasons.append(f"kata:{t}")
+
+        # 2. Acronym / Initials match (e.g. imk -> interaksi manusia komputer, pbo -> pemrograman berorientasi objek)
+        initials = "".join([w[0] for w in f_words if len(w) > 0])
+        for t in tokens:
+            if len(t) >= 2 and t == initials:
+                score += 2.0
+                reasons.append(f"inisial:{t}")
+
+        # 3. Portmanteau / Syllable blend match (Indonesian akronim: met-open -> metode penelitian, pem-web -> pemrograman web)
+        for t in tokens:
+            if len(t) >= 4 and len(f_words) >= 2:
+                w0, w1 = f_words[0], f_words[1]
+                for p0_len in range(2, min(5, len(w0)+1)):
+                    p0 = w0[:p0_len]
+                    if t.startswith(p0):
+                        rest = t[len(p0):]
+                        for p1_len in range(2, min(5, len(w1)+1)):
+                            p1 = w1[:p1_len]
+                            if p1 in rest or rest in w1:
+                                score += 3.5
+                                reasons.append(f"akronim:{p0}+{rest}->{w0}+{w1}")
+                                break
+
+        # 4. Prefix match
+        for t in tokens:
+            for w in f_words:
+                if len(t) >= 4 and len(w) >= 4:
+                    if t.startswith(w[:4]) or w.startswith(t[:4]):
+                        score += 0.5
+                        reasons.append(f"awalan:{t[:4]}")
+
+        return score, reasons
+
+    def classify_file(self, file_path, log_callback=None):
+        def _log(step, msg, status="info"):
+            if log_callback:
+                try: log_callback(step, msg, status)
+                except Exception: pass
+            self.broadcast_status(status="queue_analysis_step", step=step, message=msg, file=os.path.basename(file_path), level=status)
+
+        meta = get_file_metadata(file_path)
+        if not meta:
+            _log("error", f"Metadata berkas tidak dapat dibaca: {file_path}", "error")
+            return None
+
+        filename = meta['name']
+        ext = meta['extension'].lower()
+        _log("extract", f"Membaca isi berkas: {filename} ({meta.get('size', 0)} bytes)...", "info")
+        content = extract_content(file_path, max_chars=1800)
+        personal_base = self.config.get('personal_base', r'D:\fadhl')
+        game_base = self.config.get('game_base', r'D:\Game')
+
+        # Fast Check for Known Game & Media Formats
+        if ext in ['.schem', '.nbt']:
+            return {'category': 'Minecraft Assets', 'target_folder': os.path.join(game_base, r'Minecraft Assets\Schematics'), 'suggested_name': filename, 'summary': 'Minecraft schematic', 'confidence': 0.98, 'is_draft': False}
+        if ext == '.jar' and any(k in filename.lower() for k in ['neoforge', 'forge', 'fabric', 'mod', '1.21']):
+            return {'category': 'Minecraft Assets', 'target_folder': os.path.join(game_base, r'Minecraft Assets\Mods'), 'suggested_name': filename, 'summary': 'Minecraft mod JAR', 'confidence': 0.98, 'is_draft': False}
+        if ext == '.zip' and any(k in filename.lower() for k in ['shader', 'bsl', 'complementary', 'bliss']):
+            return {'category': 'Minecraft Assets', 'target_folder': os.path.join(game_base, r'Minecraft Assets\Shaders'), 'suggested_name': filename, 'summary': 'Minecraft shaderpack', 'confidence': 0.98, 'is_draft': False}
+        if ext in ['.png', '.jpg', '.jpeg', '.webp'] and any(k in filename.lower() for k in ['ktp', 'identitas']):
+            return {'category': 'Personal Documents', 'target_folder': os.path.join(personal_base, r'Documents\Identitas & Dokumen Resmi'), 'suggested_name': filename, 'summary': 'Dokumen identitas resmi (KTP)', 'confidence': 0.99, 'is_draft': False}
+        if ext in ['.exe', '.msi'] or (ext == '.zip' and any(k in filename.lower() for k in ['installer', 'setup'])):
+            return {'category': 'Software Installers', 'target_folder': r'D:\DOWNLOAD\Installers', 'suggested_name': filename, 'summary': 'Paket installer aplikasi Windows', 'confidence': 0.95, 'is_draft': False}
+
+        # 1. Discover all candidate destination folders dynamically
+        _log("discover", "Memindai direktori nyata di D:\\Kuliah & sistem...", "info")
+        candidates = self.discover_real_folders()
+
+        # 2. Score with Generalized Semantic Similarity Engine
+        best_candidate = None
+        best_score = 0.0
+        best_reasons = []
+
+        for cand in candidates:
+            score, reasons = self._semantic_score_folder(filename, content, cand)
+            if score > best_score:
+                best_score = score
+                best_candidate = cand
+                best_reasons = reasons
+
+        # 3. Attempt LLM Semantic Reasoning with Fast Timeout
+        _log("llm", f"Menghubungi AI Classifier ({self.active_provider}) untuk penalaran semantik...", "info")
+        folder_list_str = "\n".join([f"- {c['path']} ({c['category']})" for c in candidates if c['type'] == 'academic'])
+        if not folder_list_str:
+            folder_list_str = "\n".join([f"- {c['path']}" for c in candidates[:15]])
+
+        prompt = f"""Klasifikasikan berkas berikut ke folder tujuan yang paling tepat secara semantik.
+Nama Berkas: {filename}
+Ukuran: {meta.get('size', 0)} bytes
+Isi Ringkas: {content[:800]}
+
+Pilihan Folder Tersedia di Komputer:
+{folder_list_str}
+
+Gunakan penalaran semantik bahasa Indonesia (akronim seperti metopen->Metode Penelitian, pemweb->Pemrograman Web, konteks perkuliahan).
+Keluarkan HANYA JSON:
+{{
+  "target_folder": "path folder absolut dari pilihan di atas",
+  "category": "Kategori semantik",
+  "suggested_name": "{filename}",
+  "reasoning": "Alasan semantik 1 kalimat",
+  "confidence": 0.98
+}}"""
+
+        try:
+            resp = self.call_llm(prompt, temperature=0.1, max_tokens=600, allow_retries=False)
+            if resp and resp != 'LOCAL_HEURISTIC_MODE':
                 clean_json = resp.strip()
                 if '```json' in clean_json:
                     clean_json = clean_json.split('```json')[1].split('```')[0].strip()
                 elif '```' in clean_json:
                     clean_json = clean_json.split('```')[1].split('```')[0].strip()
                 parsed = json.loads(clean_json)
-                if 'target_folder' in parsed and 'suggested_name' in parsed:
-                    return parsed
-            except Exception as e:
-                print(f'JSON parse error: {e}')
+                target_f = parsed.get('target_folder', '')
+                if target_f and os.path.exists(target_f):
+                    reason_msg = parsed.get('reasoning', 'Kesesuaian semantik ditemukan')
+                    _log("match_llm", f"AI Reasoning: {reason_msg} -> {target_f}", "success")
+                    return {
+                        "category": parsed.get('category', 'Akademik'),
+                        "target_folder": target_f,
+                        "suggested_name": parsed.get('suggested_name', filename),
+                        "summary": reason_msg,
+                        "confidence": parsed.get('confidence', 0.98),
+                        "is_draft": False
+                    }
+        except Exception as e:
+            _log("llm_warn", f"Respon LLM dilewati ({e}). Menggunakan Semantic Reasoning Engine lokal...", "warning")
 
+        # 4. If LLM did not return valid existing path, use high-confidence semantic match
+        if best_candidate and best_score >= 0.5:
+            reason_str = ", ".join(best_reasons[:2])
+            _log("match_semantic", f"Semantic Matcher: '{filename}' cocok dengan '{best_candidate['name']}' ({reason_str})", "success")
+            return {
+                "category": best_candidate['category'],
+                "course": best_candidate['name'],
+                "target_folder": best_candidate['path'],
+                "suggested_name": filename,
+                "summary": f"Kesesuaian semantik {best_candidate['name']} ({reason_str})",
+                "confidence": min(0.96, 0.70 + (best_score * 0.08)),
+                "is_draft": False
+            }
+
+        # 5. Fallback for generic uncategorized file
+        fallback_folder = os.path.join(personal_base, 'Documents')
+        _log("fallback", f"Tidak ada folder spesifik yang cocok. Diarahkan ke {fallback_folder}", "info")
         return {
-            'category': 'Dokumen Umum',
-            'target_folder': os.path.join(personal_base, 'Documents'),
-            'suggested_name': filename,
-            'summary': f'Dokumen berkas {ext}',
-            'confidence': 0.70,
-            'is_draft': False
+            "category": "Dokumen Umum",
+            "target_folder": fallback_folder,
+            "suggested_name": filename,
+            "summary": f"Dokumen umum {ext}",
+            "confidence": 0.65,
+            "is_draft": False
         }
 
+
     def _match_academic_rules(self, text, filename, ext):
-        academic_base = self.config.get('academic_base', r'D:\Kuliah')
+        academic_base = self.config.get('academic_base', r'D:\\Kuliah')
         for semester, courses in ACADEMIC_COURSES.items():
             for course_name, keywords in courses.items():
                 match_count = sum(1 for kw in keywords if kw in text)

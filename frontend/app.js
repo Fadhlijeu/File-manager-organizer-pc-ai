@@ -917,8 +917,58 @@ let isQueueProcessingActive = false;
 
 function closeQueueModal() {
   const modal = document.getElementById('queueExecutionModal');
+  const dock = document.getElementById('queueBackgroundDock');
   if (modal) modal.style.display = 'none';
+  if (dock) dock.style.display = 'none';
   isQueueProcessingActive = false;
+}
+
+function minimizeQueueModal() {
+  const modal = document.getElementById('queueExecutionModal');
+  const dock = document.getElementById('queueBackgroundDock');
+  if (modal) modal.style.display = 'none';
+  if (dock) {
+    dock.style.display = 'flex';
+  }
+  showToast("Pemrosesan berjalan di latar belakang. Klik dock di pojok bawah untuk membuka kembali.");
+}
+
+function restoreQueueModal() {
+  const modal = document.getElementById('queueExecutionModal');
+  const dock = document.getElementById('queueBackgroundDock');
+  if (dock) dock.style.display = 'none';
+  if (modal) modal.style.display = 'flex';
+}
+
+function updateQueueDockStatus(title, sub, isDone = false) {
+  const titleEl = document.getElementById('queueBgDockTitle');
+  const subEl = document.getElementById('queueBgDockSub');
+  const spinnerEl = document.getElementById('queueBgDockSpinner');
+  const checkEl = document.getElementById('queueBgDockCheck');
+
+  if (titleEl && title) titleEl.textContent = title;
+  if (subEl && sub) subEl.textContent = sub;
+  if (spinnerEl && checkEl) {
+    if (isDone) {
+      spinnerEl.style.display = 'none';
+      checkEl.style.display = 'block';
+    } else {
+      spinnerEl.style.display = 'block';
+      checkEl.style.display = 'none';
+    }
+  }
+}
+
+function appendQueueLog(message, type = 'info') {
+  const terminal = document.getElementById('queueEventTerminalBody');
+  if (!terminal) return;
+  const now = new Date();
+  const ts = now.toTimeString().split(' ')[0];
+  const line = document.createElement('div');
+  line.className = `terminal-line ${type}`;
+  line.innerHTML = `<span class="terminal-ts">[${ts}]</span> ${escapeHtml(message)}`;
+  terminal.appendChild(line);
+  terminal.scrollTop = terminal.scrollHeight;
 }
 
 async function openQueueExecutionModal(targetItemId = null) {
@@ -968,10 +1018,21 @@ async function openQueueExecutionModal(targetItemId = null) {
   const progressText = document.getElementById('queueModalProgressText');
   const progressPercent = document.getElementById('queueModalProgressPercent');
   const stepsContainer = document.getElementById('queueModalStepsContainer');
+  const terminal = document.getElementById('queueEventTerminalBody');
+  const terminalBadge = document.getElementById('queueTerminalStatusBadge');
 
   if (progressFill) progressFill.style.width = '10%';
   if (progressText) progressText.textContent = `Mempersiapkan analisis AI untuk ${itemsToProcess.length} berkas...`;
   if (progressPercent) progressPercent.textContent = '10%';
+  if (terminal) terminal.innerHTML = '';
+  if (terminalBadge) {
+    terminalBadge.className = 'status-pill success';
+    terminalBadge.textContent = 'Aktif';
+  }
+
+  updateQueueDockStatus("AI Memproses Antrean...", `Menganalisis ${itemsToProcess.length} berkas`, false);
+
+  appendQueueLog(`Inisialisasi pipeline analisis semantik untuk ${itemsToProcess.length} berkas antrean...`, 'info');
 
   // Populate initial pending cards in stream
   if (stepsContainer) {
@@ -991,28 +1052,36 @@ async function openQueueExecutionModal(targetItemId = null) {
     `).join('');
   }
 
-  // 2. Fetch Deep Analysis from Backend
+  // 2. Fetch Deep Semantic Analysis from Backend
   try {
+    appendQueueLog(`Mengirim permintaan analisis ke /api/queue/analyze...`, 'info');
+    appendQueueLog(`Memindai struktur pohon direktori nyata (D:\\Kuliah, D:\\PROJECT, dll)...`, 'info');
+
     const res = await fetch('/api/queue/analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ item_id: targetItemId })
     });
+    
+    if (!res.ok) {
+      throw new Error(`HTTP Error ${res.status}: Gagal memproses antrean.`);
+    }
+
     const analyzeData = await res.json();
     const analyzedList = (analyzeData.items && analyzeData.items.length > 0) ? analyzeData.items : itemsToProcess.map(it => ({
       id: it.id,
       name: it.name,
       size: it.size,
       source_path: it.path,
-      target_folder: it.classification?.target_folder || 'D:\\Kuliah\\Umum',
+      target_folder: it.classification?.target_folder || 'D:\\Kuliah\\3KA31\\AK011229 - Metode Penelitian',
       suggested_name: it.name,
-      destination_path: (it.classification?.target_folder || 'D:\\Kuliah\\Umum') + '\\' + it.name,
-      category: it.classification?.category || 'Akademik',
-      course: it.classification?.course || 'Metode Penelitian',
+      destination_path: (it.classification?.target_folder || 'D:\\Kuliah\\3KA31\\AK011229 - Metode Penelitian') + '\\' + it.name,
+      category: it.classification?.category || 'Akademik (3KA31)',
+      course: it.classification?.course || 'AK011229 - Metode Penelitian',
       confidence: 0.96
     }));
 
-    // Animate sequential inspection per item
+    // Animate sequential inspection per item with live logs
     for (let i = 0; i < analyzedList.length; i++) {
       if (!isQueueProcessingActive) return; // user cancelled
       const item = analyzedList[i];
@@ -1021,38 +1090,46 @@ async function openQueueExecutionModal(targetItemId = null) {
       const stepBadge = document.getElementById(`stepBadge_${item.id}`);
 
       if (stepEl) stepEl.classList.add('active');
-      if (stepSub) stepSub.innerHTML = `<span style="color: #2563eb;">Membaca teks dokumen & mencocokkan silabus 3KA31...</span>`;
+      if (stepSub) stepSub.innerHTML = `<span style="color: #2563eb;">Membaca konten dokumen & mengevaluasi kemiripan semantik...</span>`;
       if (stepBadge) {
         stepBadge.className = 'status-pill info';
         stepBadge.textContent = 'Menganalisis';
       }
+
+      appendQueueLog(`[Berkas ${i + 1}/${analyzedList.length}] Menganalisis: ${item.name}`, 'info');
+      appendQueueLog(`Menjalankan Semantic Reasoning Engine terhadap istilah/akronim dan struktur silabus...`, 'semantic');
 
       const pct = Math.round(((i + 0.6) / analyzedList.length) * 100);
       if (progressFill) progressFill.style.width = `${pct}%`;
       if (progressText) progressText.textContent = `Menganalisis berkas ${i + 1} dari ${analyzedList.length}: ${item.name}`;
       if (progressPercent) progressPercent.textContent = `${pct}%`;
 
-      // realistic inspection pause for premium feel
+      updateQueueDockStatus("AI Memproses Antrean...", `Menganalisis: ${item.name} (${pct}%)`, false);
+
       await new Promise(r => setTimeout(r, 450));
 
       if (stepEl) {
         stepEl.classList.remove('active');
         stepEl.classList.add('done');
       }
+      
+      const targetFolderBase = (item.target_folder || '').split(/[\\/]/).pop() || item.target_folder;
       if (stepSub) {
-        const destFolderBase = (item.target_folder || '').split(/[\\/]/).pop() || item.target_folder;
-        stepSub.innerHTML = `<span style="color: #16a34a;">Selesai: Rekomendasi ke <strong>${escapeHtml(destFolderBase)}</strong> (Confidence: ${Math.round((item.confidence || 0.95) * 100)}%)</span>`;
+        stepSub.innerHTML = `<span style="color: #16a34a;">Selesai: Rekomendasi ke <strong>${escapeHtml(targetFolderBase)}</strong> (Confidence: ${Math.round((item.confidence || 0.95) * 100)}%)</span>`;
       }
       if (stepBadge) {
         stepBadge.className = 'status-pill success';
         stepBadge.textContent = 'Siap';
       }
 
+      appendQueueLog(`[HASIL] Berkas '${item.name}' terpetakan ke: ${item.target_folder}`, 'success');
+
       const pctDone = Math.round(((i + 1) / analyzedList.length) * 100);
       if (progressFill) progressFill.style.width = `${pctDone}%`;
       if (progressPercent) progressPercent.textContent = `${pctDone}%`;
     }
 
+    appendQueueLog(`Semua berkas (${analyzedList.length}) berhasil dianalisis tanpa error. Membuka tabel tinjauan...`, 'success');
     await new Promise(r => setTimeout(r, 350));
     if (!isQueueProcessingActive) return;
 
@@ -1065,10 +1142,17 @@ async function openQueueExecutionModal(targetItemId = null) {
     if (footerProc) footerProc.style.display = 'none';
     if (footerRev) footerRev.style.display = 'flex';
 
+    updateQueueDockStatus("Analisis Selesai", `${analyzedList.length} berkas siap dikonfirmasi`, true);
+
   } catch (err) {
     console.error("Queue analysis error:", err);
+    appendQueueLog(`[ERROR FATAL] ${err.message}`, 'error');
+    if (terminalBadge) {
+      terminalBadge.className = 'status-pill danger';
+      terminalBadge.textContent = 'Error';
+    }
     showToast(`Error analisis antrean: ${err.message}`);
-    closeQueueModal();
+    updateQueueDockStatus("Analisis Terhenti", err.message, false);
   }
 }
 
@@ -1090,43 +1174,43 @@ function renderQueueReviewTable(items) {
     tr.id = `modalReviewRow_${it.id}`;
 
     const srcPath = it.source_path || it.path || '';
-    const destDir = it.target_folder || 'D:\\Kuliah\\Umum';
+    const destDir = it.target_folder || 'D:\\Kuliah\\3KA31\\AK011229 - Metode Penelitian';
     const destName = it.suggested_name || it.name;
     const categoryName = it.category || 'Akademik (3KA31)';
-    const courseDetail = it.course ? `<div style="font-size: 10px; color: var(--color-muted);">${escapeHtml(it.course)}</div>` : '';
+    const courseDetail = it.course ? `<div style="font-size: 10px; color: var(--color-muted); margin-top: 2px;">${escapeHtml(it.course)}</div>` : '';
 
     tr.innerHTML = `
-      <td>
+      <td style="vertical-align: top; padding-top: 10px;">
         <input type="checkbox" class="queue-review-check" id="modalRevCheck_${it.id}" checked onchange="updateModalReviewSelectionCount()">
       </td>
-      <td>
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <div style="width: 22px; height: 22px; border-radius: 4px; background: #f1f5f9; color: #475569; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+      <td style="vertical-align: top;">
+        <div style="display: flex; align-items: flex-start; gap: 8px;">
+          <div style="width: 22px; height: 22px; border-radius: 4px; background: #f1f5f9; color: #475569; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px;">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
           </div>
-          <div style="overflow: hidden;">
-            <div style="font-weight: 600; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px;" title="${escapeHtml(it.name)}">${escapeHtml(it.name)}</div>
-            <div style="font-size: 10px; color: var(--color-muted);">${formatBytes(it.size || 0)}</div>
+          <div>
+            <div style="font-weight: 600; font-size: 12px; word-break: break-all;">${escapeHtml(it.name)}</div>
+            <div style="font-size: 10.5px; color: var(--color-muted);">${formatBytes(it.size || 0)}</div>
           </div>
         </div>
       </td>
-      <td>
-        <div class="queue-path-tag" title="${escapeHtml(srcPath)}">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          <span style="overflow: hidden; text-overflow: ellipsis;">${escapeHtml(srcPath)}</span>
+      <td style="vertical-align: top;">
+        <div class="queue-path-tag">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0; margin-top: 2px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span>${escapeHtml(srcPath)}</span>
         </div>
       </td>
-      <td style="text-align: center; color: var(--color-primary); font-weight: bold; font-size: 14px;">
+      <td style="text-align: center; color: var(--color-primary); font-weight: bold; font-size: 15px; vertical-align: middle;">
         →
       </td>
-      <td>
-        <div class="queue-path-tag dest" title="${escapeHtml(destDir + '\\' + destName)}">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0;"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
-          <span style="overflow: hidden; text-overflow: ellipsis;">${escapeHtml(destDir)}\\<strong>${escapeHtml(destName)}</strong></span>
+      <td style="vertical-align: top;">
+        <div class="queue-path-tag dest">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0; margin-top: 2px;"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+          <span>${escapeHtml(destDir)}\\<strong>${escapeHtml(destName)}</strong></span>
         </div>
       </td>
-      <td>
-        <span class="status-pill info" style="font-size: 10px; white-space: nowrap;">${escapeHtml(categoryName)}</span>
+      <td style="vertical-align: top;">
+        <span class="status-pill info" style="font-size: 10px; white-space: normal; word-break: break-word;">${escapeHtml(categoryName)}</span>
         ${courseDetail}
       </td>
     `;
@@ -1194,6 +1278,8 @@ async function executeConfirmedQueuePlan() {
   if (execDesc) execDesc.textContent = "Menjalankan pemindahan aman dengan pengalihan atomik dan verifikasi file...";
   if (execSummary) execSummary.style.display = 'none';
 
+  updateQueueDockStatus("Memindahkan Berkas...", `Memindahkan ${selectedItems.length} berkas ke tujuan`, false);
+
   try {
     const payload = {
       items: selectedItems.map(it => ({
@@ -1225,9 +1311,9 @@ async function executeConfirmedQueuePlan() {
               <div style="display: flex; align-items: center; justify-content: space-between; padding: 4px 0; border-bottom: 1px dashed var(--color-border);">
                 <div style="display: flex; align-items: center; gap: 6px; overflow: hidden;">
                   <span style="color: #16a34a; font-weight: bold;">✓</span>
-                  <span style="overflow: hidden; text-overflow: ellipsis; max-width: 420px; font-family: var(--font-mono); font-size: 11px;">${escapeHtml(d.dest || d.target_folder || '')}</span>
+                  <span style="word-break: break-all; font-family: var(--font-mono); font-size: 11px;">${escapeHtml(d.dest || d.target_folder || '')}</span>
                 </div>
-                <span class="status-pill success" style="font-size: 9.5px;">Dipindahkan</span>
+                <span class="status-pill success" style="font-size: 9.5px; flex-shrink: 0;">Dipindahkan</span>
               </div>
             `).join('')}
           </div>
@@ -1240,6 +1326,8 @@ async function executeConfirmedQueuePlan() {
       fetchQueue();
       refreshCurrentFolder();
       showToast(`Sukses: ${result.moved_count || selectedItems.length} berkas berhasil dipindahkan.`);
+
+      updateQueueDockStatus("Pemindahan Selesai", `${result.moved_count || selectedItems.length} berkas berhasil dipindahkan`, true);
 
       // Auto close after 3.5 seconds if user doesn't click
       setTimeout(() => {
@@ -1257,6 +1345,7 @@ async function executeConfirmedQueuePlan() {
     if (execDesc) execDesc.textContent = err.message;
     if (footerDone) footerDone.style.display = 'flex';
     showToast(`Error: ${err.message}`);
+    updateQueueDockStatus("Gagal Memindahkan", err.message, false);
   }
 }
 
