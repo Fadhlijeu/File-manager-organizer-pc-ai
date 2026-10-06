@@ -2629,9 +2629,16 @@ function renderModelsManagementTable(filterQuery = '') {
   const modalTbody = document.getElementById('modalModelsTableBody');
   const settingsTbody = document.getElementById('settingsModelsTableBody');
   const countBadge = document.getElementById('modalModelCountBadge');
+  const settingsCountBadge = document.getElementById('settingsModelCountBadge');
+  const settingsActivePill = document.getElementById('settingsActiveModelPill');
 
-  if (countBadge) {
-    countBadge.textContent = `${userModelsRegistry.length} model`;
+  const totalCount = userModelsRegistry.length;
+  if (countBadge) countBadge.textContent = `${totalCount} model`;
+  if (settingsCountBadge) settingsCountBadge.textContent = `${totalCount} Model`;
+
+  const activeObj = userModelsRegistry.find(m => m.id === activeModel);
+  if (settingsActivePill) {
+    settingsActivePill.textContent = activeObj ? `Aktif: ${activeObj.label || activeObj.id}` : '1 Aktif';
   }
 
   const q = (filterQuery || '').toLowerCase().trim();
@@ -2644,35 +2651,44 @@ function renderModelsManagementTable(filterQuery = '') {
 
   const renderRows = () => {
     if (filtered.length === 0) {
-      return `<tr><td colspan="5" style="text-align: center; color: var(--color-muted); padding: 16px;">Tidak ada model yang cocok.</td></tr>`;
+      return `<tr><td colspan="4" style="text-align: center; color: var(--color-muted); padding: 24px;">Tidak ada model yang cocok dengan kriteria pencarian.</td></tr>`;
     }
     return filtered.map(m => {
       const isActive = m.id === activeModel;
       const provClass = m.provider || 'gemini';
       const provLabel = PROVIDER_NAMES[m.provider] || m.provider;
-      const safeId = escapeHtml(m.id).replace(/'/g, "\\'");
+      const safeId = escapeHtml(m.id).replace(/'/g, "\'");
       return `
-        <tr style="${isActive ? 'background: #f0fdf4;' : ''}">
-          <td>
+        <tr class="model-row ${isActive ? 'row-active-model' : ''}">
+          <td style="width: 140px;">
             <span class="badge-prov-chip ${escapeHtml(provClass)}">${escapeHtml(provLabel)}</span>
           </td>
-          <td style="font-weight: 500;">
-            ${escapeHtml(m.label || m.id)}
-          </td>
           <td>
-            <code style="font-family: var(--font-mono); font-size: 11px; color: var(--color-secondary);">${escapeHtml(m.id)}</code>
+            <div class="model-name-primary">
+              <span class="model-label-text">${escapeHtml(m.label || m.id)}</span>
+              ${isActive ? '<span class="model-rec-chip">Aktif</span>' : ''}
+            </div>
+            <div class="model-meta-secondary">
+              <code class="model-technical-id">${escapeHtml(m.id)}</code>
+              <button type="button" class="btn-copy-tech-id" onclick="copyModelId('${safeId}')" title="Salin ID Model">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              </button>
+            </div>
           </td>
-          <td style="text-align: center;">
-            ${isActive ? '<span class="status-pill success" style="font-size: 10px; padding: 1px 6px;">Aktif</span>' : '<button type="button" class="btn-clean" style="height: 20px; font-size: 10px; padding: 0 5px;" onclick="setActiveModelFromTable(\'' + safeId + '\')">Pilih</button>'}
+          <td style="width: 150px; text-align: center;">
+            ${isActive ?
+              `<span class="model-status-active-pill"><span class="active-pulse-dot"></span> Aktif Digunakan</span>` :
+              `<button type="button" class="btn-select-model" data-id="${safeId}" onclick="setActiveModelFromTable(this.getAttribute('data-id'))">Pilih Model</button>`
+            }
           </td>
-          <td style="text-align: right;">
-            <div style="display: inline-flex; gap: 4px; justify-content: flex-end;">
-              <button type="button" class="btn-action-icon" onclick="startEditModel('${safeId}')" title="Ubah nama atau ID model">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          <td style="width: 140px; text-align: right;">
+            <div class="model-row-actions">
+              <button type="button" class="btn-action-icon edit" data-id="${safeId}" onclick="startEditModel(this.getAttribute('data-id'))" title="Ubah nama atau ID model">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                 <span>Edit</span>
               </button>
-              <button type="button" class="btn-action-icon danger" onclick="deleteModel('${safeId}')" title="Hapus model dari daftar & dropdown">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+              <button type="button" class="btn-action-icon danger" data-id="${safeId}" onclick="deleteModel(this.getAttribute('data-id'))" title="Hapus model dari daftar">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
                 <span>Hapus</span>
               </button>
             </div>
@@ -2685,6 +2701,26 @@ function renderModelsManagementTable(filterQuery = '') {
   const rowsHtml = renderRows();
   if (modalTbody) modalTbody.innerHTML = rowsHtml;
   if (settingsTbody) settingsTbody.innerHTML = rowsHtml;
+}
+
+function copyModelId(id) {
+  navigator.clipboard.writeText(id).then(() => {
+    showToast(`ID Model disalin: ${id}`);
+  });
+}
+
+function updateTempDisplay(val) {
+  const el = document.getElementById('tempDisplay');
+  if (!el) return;
+  const num = parseFloat(val);
+  const tag = num <= 0.3 ? 'Presisi Tinggi' : (num <= 0.7 ? 'Seimbang' : 'Kreatif');
+  el.textContent = `${num.toFixed(1)} ? ${tag}`;
+}
+
+function updateTokensDisplay(val) {
+  const el = document.getElementById('tokensDisplay');
+  if (!el) return;
+  el.textContent = `${parseInt(val).toLocaleString()} Token`;
 }
 
 function setActiveModelFromTable(modelId) {

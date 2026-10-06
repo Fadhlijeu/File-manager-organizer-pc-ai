@@ -764,31 +764,39 @@
                   </div>
 
                   
-                  <!-- Field 4: Full User Model Management Table -->
-                  <div class="settings-form-row" style="flex-direction: column; align-items: stretch; gap: 8px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-                      <div>
-                        <h4 style="margin: 0; font-size: 12px; font-weight: 600;">Daftar Model AI Terdaftar (Bebas Hapus, Tambah & Ubah)</h4>
-                        <p style="margin: 2px 0 0; font-size: 11px; color: var(--color-muted);">User memiliki kontrol penuh: hapus model yang tidak digunakan, ubah label, atau tambahkan model baru.</p>
+                  <!-- Full-Width Section: Model Registry & Management -->
+                  <div class="settings-full-section">
+                    <div class="model-registry-header">
+                      <div class="model-registry-title-area">
+                        <div class="registry-title-row">
+                          <h4 class="registry-title">Katalog & Registry Model AI</h4>
+                          <span class="registry-count-pill" id="settingsModelCountBadge">5 Model</span>
+                          <span class="registry-active-pill" id="settingsActiveModelPill">1 Aktif</span>
+                        </div>
+                        <p class="registry-subtitle">User memiliki kontrol penuh: pilih model aktif, ubah label tampilan, hapus model tidak terpakai, atau tambahkan model kustom.</p>
                       </div>
-                      <div style="display: flex; gap: 6px;">
-                        <button type="button" class="btn-clean" onclick="openModelManagerModal(null, 'add')" style="height: 26px; font-size: 11px;">
-                          <i data-lucide="plus" style="width: 12px; height: 12px;"></i> Tambah Model
+                      <div class="registry-actions-toolbar">
+                        <div class="registry-search-wrap">
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                          <input type="text" id="settingsModelSearchInput" class="registry-search-input" placeholder="Cari model atau provider..." oninput="renderModelsManagementTable(this.value)">
+                        </div>
+                        <button type="button" class="btn-clean primary-action" onclick="openModelManagerModal(null, 'add')">
+                          <i data-lucide="plus" style="width: 13px; height: 13px;"></i> Tambah Model
                         </button>
-                        <button type="button" class="btn-clean" onclick="resetModelsToDefaultsPrompt()" title="Kembalikan semua model ke daftar bawaan" style="height: 26px; font-size: 11px;">
-                          <i data-lucide="rotate-ccw" style="width: 12px; height: 12px;"></i> Reset ke Default
+                        <button type="button" class="btn-clean outline-action" onclick="resetModelsToDefaultsPrompt()" title="Kembalikan semua model ke daftar bawaan">
+                          <i data-lucide="rotate-ccw" style="width: 13px; height: 13px;"></i> Reset Default
                         </button>
                       </div>
                     </div>
-                    <div class="model-table-container" style="max-height: 280px; overflow-y: auto;">
-                      <table class="model-manager-table">
+
+                    <div class="model-table-container modern">
+                      <table class="model-manager-table modern">
                         <thead>
                           <tr>
-                            <th style="width: 130px;">Provider</th>
-                            <th>Nama Tampilan (Label)</th>
-                            <th style="width: 220px;">ID Model Teknis</th>
-                            <th style="width: 90px; text-align: center;">Status</th>
-                            <th style="width: 110px; text-align: right;">Aksi</th>
+                            <th style="width: 140px;">Provider</th>
+                            <th>Model & Identitas Teknis</th>
+                            <th style="width: 150px; text-align: center;">Status</th>
+                            <th style="width: 140px; text-align: right;">Aksi</th>
                           </tr>
                         </thead>
                         <tbody id="settingsModelsTableBody">
@@ -798,26 +806,51 @@
                     </div>
                   </div>
 
-                  <!-- Field 3: Hyperparameters -->
-                  <div class="settings-form-row">
-                    <div class="field-label-wrap">
-                      <h4>Parameter Generasi</h4>
-                      <p>Kreativitas dan batas panjang respon model saat menganalisis dokumen.</p>
-                    </div>
-                    <div class="field-control-wrap" style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4);">
-                      <div>
-                        <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px;">
-                          <span>Temperature</span>
-                          <strong id="tempDisplay">0.2 (Presisi Tinggi)</strong>
-                        </div>
-                        <input type="range" id="paramTemp" min="0" max="1" step="0.1" value="0.2" style="width: 100%; cursor: pointer;" oninput="document.getElementById('tempDisplay').textContent = this.value + (this.value <= 0.3 ? ' (Presisi Tinggi)' : ' (Kreatif)')">
+                  <!-- Full-Width Section: Hyperparameters -->
+                  <div class="settings-full-section hyperparams-section">
+                    <div class="hyperparams-header">
+                      <div class="hyperparams-title-area">
+                        <h4 class="registry-title">Parameter Inferensi Model</h4>
+                        <p class="registry-subtitle">Sesuaikan tingkat keacakan (temperature) dan batas kuota panjang token respon saat mengekstrak dan menganalisis berkas.</p>
                       </div>
-                      <div>
-                        <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px;">
-                          <span>Max Tokens</span>
-                          <strong id="tokensDisplay">1500</strong>
+                    </div>
+                    <div class="hyperparams-cards-grid">
+                      <div class="hyperparam-card">
+                        <div class="hyperparam-card-header">
+                          <div class="param-title-group">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                            <span class="param-name">Temperature (Kreativitas)</span>
+                          </div>
+                          <span class="param-value-chip" id="tempDisplay">0.2 ? Presisi Tinggi</span>
                         </div>
-                        <input type="range" id="paramTokens" min="500" max="4000" step="250" value="1500" style="width: 100%; cursor: pointer;" oninput="document.getElementById('tokensDisplay').textContent = this.value">
+                        <p class="param-desc">Nilai rendah (0.0 - 0.3) memastikan ekstraksi informasi dan nama berkas akurat tanpa spekulasi.</p>
+                        <div class="param-slider-wrapper">
+                          <input type="range" id="paramTemp" class="modern-range-slider" min="0" max="1" step="0.1" value="0.2" oninput="updateTempDisplay(this.value)">
+                          <div class="slider-ticks">
+                            <span>0.0 (Ketat)</span>
+                            <span>0.5 (Seimbang)</span>
+                            <span>1.0 (Kreatif)</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="hyperparam-card">
+                        <div class="hyperparam-card-header">
+                          <div class="param-title-group">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+                            <span class="param-name">Maksimum Token Output</span>
+                          </div>
+                          <span class="param-value-chip" id="tokensDisplay">1,500 Token</span>
+                        </div>
+                        <p class="param-desc">Batas kuota panjang respons analisis untuk setiap giliran jawaban agen (1 token ? 4 karakter).</p>
+                        <div class="param-slider-wrapper">
+                          <input type="range" id="paramTokens" class="modern-range-slider" min="500" max="4000" step="250" value="1500" oninput="updateTokensDisplay(this.value)">
+                          <div class="slider-ticks">
+                            <span>500 (Ringkas)</span>
+                            <span>2,000 (Standar)</span>
+                            <span>4,000 (Maksimal)</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1018,14 +1051,13 @@
 
         <!-- High-Density Models Table in Modal -->
         <div class="model-table-container" style="max-height: 320px; overflow-y: auto;">
-          <table class="model-manager-table" id="modalModelsTable">
+          <table class="model-manager-table modern" id="modalModelsTable">
             <thead>
               <tr>
                 <th style="width: 140px;">Provider</th>
-                <th>Nama Tampilan</th>
-                <th style="width: 220px;">ID Model Teknis</th>
-                <th style="width: 80px; text-align: center;">Status</th>
-                <th style="width: 120px; text-align: right;">Aksi</th>
+                <th>Model & Identitas Teknis</th>
+                <th style="width: 150px; text-align: center;">Status</th>
+                <th style="width: 140px; text-align: right;">Aksi</th>
               </tr>
             </thead>
             <tbody id="modalModelsTableBody">

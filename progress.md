@@ -275,6 +275,11 @@ lalu ada error nih, misalnya saya pencet folder kuliah di sidebar, dan saya seda
   - Menambahkan validasi `finish` & auto-synthesis fallback di `src/agent_engine.py`: agen wajib menyajikan data riil dan secara otomatis merangkum berkas jika model memanggil finish tanpa jawaban lengkap.
   - Menghilangkan kontrol internal `finish` dan `thinking` dari log aktivitas pengguna.
   - Mendesain ulang seluruh UI Event Log di `frontend/app.js` dan `frontend/styles.css`: card langkah modern, pill tool berwarna, drawer terminal bergaya macOS/IDE gelap, serta realtime pulse chips yang bersih dan elegan.
+  - [x] **Redesign Total Katalog & Registry Model AI serta Parameter Inferensi**:
+  - Menghilangkan layout 2-kolom sempit yang sebelumnya menjepit judul dan tombol di 240px serta memaksa tabel membungkus teks hingga 4 baris.
+  - Mengubah section menjadi full-width dengan header toolbar modern: judul, badge jumlah model, badge model aktif, live search bar, tombol primer '+ Tambah Model', dan tombol 'Reset Default'.
+  - Merancang ulang tabel model: nama model bold dalam satu baris dengan tag ID teknis dan tombol salin di bawahnya, status aktif berpendar 'Aktif Digunakan', serta tombol aksi Edit dan Hapus yang rapi.
+  - Merancang ulang section 'Parameter Inferensi Model' menjadi 2 kartu modern berdampingan (Temperature dan Max Tokens) dengan slider modern dan live value chip.
 
 
 #### Files Modified This Session
