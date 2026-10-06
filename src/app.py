@@ -1,5 +1,6 @@
 # app.py
 import os
+import sys
 import json
 import asyncio
 import threading
@@ -21,8 +22,19 @@ from crud_engine import (
 from agent_engine import AutonomousAgent
 from content_extractor import get_file_metadata, extract_content
 
-APP_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(APP_DIR, 'config.json')
+SRC_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SRC_DIR)
+if SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+# Priority: config/config.json -> config.json
+CONFIG_PATH = os.path.join(PROJECT_ROOT, 'config', 'config.json')
+if not os.path.exists(CONFIG_PATH):
+    fallback_config = os.path.join(PROJECT_ROOT, 'config.json')
+    if os.path.exists(fallback_config):
+        CONFIG_PATH = fallback_config
 
 app = FastAPI(title="AI File Manager & Organizer")
 
@@ -480,10 +492,16 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket)
 
-# Mount static frontend
-static_dir = os.path.join(APP_DIR, 'static')
-app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+# Mount frontend UI
+frontend_dir = os.path.join(PROJECT_ROOT, 'frontend')
+if not os.path.exists(frontend_dir):
+    frontend_dir = os.path.join(PROJECT_ROOT, 'static')
+
+app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
+
+def start_server(host="127.0.0.1", port=8765, reload=False):
+    import uvicorn
+    uvicorn.run(app, host=host, port=port, log_level="info")
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8765, log_level="info")
+    start_server()

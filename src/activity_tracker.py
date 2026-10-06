@@ -9,7 +9,14 @@ import json
 import time
 from datetime import datetime
 
-ACTIVITY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'activity_log.json')
+SRC_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SRC_DIR)
+DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
+os.makedirs(DATA_DIR, exist_ok=True)
+ACTIVITY_FILE = os.path.join(DATA_DIR, 'activity_log.json')
+# Fallback check for root activity_log.json
+if not os.path.exists(ACTIVITY_FILE) and os.path.exists(os.path.join(PROJECT_ROOT, 'activity_log.json')):
+    ACTIVITY_FILE = os.path.join(PROJECT_ROOT, 'activity_log.json')
 
 class ActivityTracker:
     def __init__(self):

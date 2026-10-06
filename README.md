@@ -78,24 +78,52 @@ Or configure API keys directly inside the desktop application under **Pengaturan
 
 ## Project Structure
 
-`
+```text
 File-manager-organizer-pc-ai/
-|-- desktop_app.py        # Standalone native desktop launcher (Edge WebView2)
-|-- app.py                # FastAPI REST, SSE, and WebSocket backend
-|-- ai_engine.py          # Multi-provider AI reasoning and fallback controller
-|-- agent_engine.py       # Autonomous ReAct agent with PowerShell execution
-|-- content_extractor.py  # Internal document content parser (PDF, Word, PPTX, Excel)
-|-- crud_engine.py        # Safe file operations and Windows Explorer integrations
-|-- watcher.py            # Windows kernel-level filesystem listener
-|-- config.example.json   # Configuration template for providers and paths
-|-- requirements.txt      # Python dependencies
-|-- LICENSE               # MIT License
--- static/               # Nuvio Support Dashboard Frontend
-    |-- index.html        # High-density semantic dashboard markup
-    |-- styles.css        # Monochromatic design system tokens and component styles
-    |-- app.js            # Desktop UI controller, chart interactions, and state
-    -- marked.min.js     # Fast markdown rendering engine for agent reasoning
-`
+├── src/                                  # Backend Python source code & engines
+│   ├── app.py                            # FastAPI REST, SSE, and WebSocket server
+│   ├── agent_engine.py                   # Autonomous ReAct agent & host execution
+│   ├── ai_engine.py                      # Multi-provider AI reasoning & LLM integration
+│   ├── ai_decide.py                      # Context-aware safety evaluator & rules
+│   ├── crud_engine.py                    # Safe file operations & Recycle Bin integration
+│   ├── content_extractor.py              # Document content & metadata parser
+│   ├── activity_tracker.py               # Real-time telemetry & persistent metrics
+│   ├── watcher.py                        # Windows kernel filesystem watchdog listener
+│   └── desktop_app.py                    # Standalone native desktop launcher (Edge App Mode)
+├── frontend/                             # Single-page desktop UI application
+│   ├── index.html                        # Semantic dashboard markup & layouts
+│   ├── styles.css                        # Hallmark design system tokens & styles
+│   ├── app.js                            # UI controller, WebSocket & interactive widgets
+│   ├── lucide.min.js                     # Lucide icon library
+│   └── marked.min.js                     # Fast markdown rendering engine
+├── config/                               # Settings & configuration
+│   ├── config.json                       # Local settings & active API credentials (git-ignored)
+│   └── config.example.json               # Configuration template
+├── data/                                 # Runtime persistent state
+│   └── activity_log.json                 # Persistent activity store (git-ignored)
+├── logs/                                 # Runtime logs
+│   ├── desktop_runtime.log               # Desktop lifecycle logs (git-ignored)
+│   └── desktop_debug.log                 # Debug logs (git-ignored)
+├── scripts/                              # Startup & automation scripts
+│   ├── launch.bat                        # Batch launcher script
+│   └── launch_silent.vbs                 # Silent background VBS launcher
+├── workflows/                            # Architecture & project specifications
+│   ├── 00_overview.md                    # Core vision & principles
+│   ├── 01_requirements.md                # Functional & safety requirements
+│   ├── 02_architecture.md                # System & module architecture
+│   ├── 04_data_models.md                 # Data schemas & telemetry models
+│   ├── 06_ui_design_system.md            # Design system & tokens
+│   └── 08_milestones.md                  # Roadmap & completed milestones
+├── AGENT_NOTICE.md                       # Agent governance & safety constraints
+├── progress.md                           # Session memory & changelog
+├── main.py                               # Unified entrypoint (CLI & GUI launcher)
+├── launch.bat                            # Quick launcher shortcut
+├── launch_silent.vbs                     # Silent launcher shortcut
+├── requirements.txt                      # Python dependencies
+├── README.md                             # Project documentation
+├── LICENSE                               # MIT License
+└── .gitignore
+```
 
 ---
 

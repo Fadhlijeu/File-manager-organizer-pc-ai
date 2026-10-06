@@ -16,15 +16,20 @@ import urllib.request
 import ctypes
 import threading
 
-APP_DIR = os.path.dirname(os.path.abspath(__file__))
-if APP_DIR not in sys.path:
-    sys.path.insert(0, APP_DIR)
-os.chdir(APP_DIR)
+SRC_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SRC_DIR)
+if SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+os.chdir(PROJECT_ROOT)
 
 APP_PORT = 8765
 APP_HOST = "127.0.0.1"
 APP_URL = f"http://{APP_HOST}:{APP_PORT}"
-LOG_FILE = os.path.join(APP_DIR, "desktop_runtime.log")
+LOGS_DIR = os.path.join(PROJECT_ROOT, "logs")
+os.makedirs(LOGS_DIR, exist_ok=True)
+LOG_FILE = os.path.join(LOGS_DIR, "desktop_runtime.log")
 
 def log(msg):
     try:
@@ -68,13 +73,13 @@ def find_edge_path():
 
 def start_backend_subprocess():
     python_exe = find_python_exe()
-    app_script = os.path.join(APP_DIR, "app.py")
+    app_script = os.path.join(SRC_DIR, "app.py")
     creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
     log(f"Starting backend: {python_exe} {app_script}")
     proc = subprocess.Popen(
         [python_exe, "-u", app_script],
-        cwd=APP_DIR,
+        cwd=PROJECT_ROOT,
         creationflags=creationflags,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

@@ -1,10 +1,12 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
-*.class
+*$py.class
+src/__pycache__/
 
 # Local Configuration & Secrets (CRITICAL)
 config.json
+config/config.json
 .env
 .env.*
 
@@ -19,9 +21,12 @@ ENV/
 .vscode/
 *.sublime-project
 *.sublime-workspace
+.kilo/
 
-# Logs & Temporary Files
+# Runtime Data & Logs (Local Only)
 *.log
+logs/
+data/activity_log.json
 activity_log.json
 *.tmp
 *.bak
