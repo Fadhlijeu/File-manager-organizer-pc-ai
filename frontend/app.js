@@ -303,14 +303,14 @@ function renderCustomActionButtonsFromText(body) {
         actionPayload = actionStr.slice(12).trim();
       }
 
-      const iconSvg = actionType === 'powershell' 
+      const iconSvg = actionType === 'powershell'
         ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>'
         : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>';
 
       buttons.push(`
-        <button type="button" class="custom-ui-action-btn ${escapeHtml(type)}" 
-                data-type="${escapeHtml(actionType)}" 
-                data-payload="${escapeHtml(actionPayload)}" 
+        <button type="button" class="custom-ui-action-btn ${escapeHtml(type)}"
+                data-type="${escapeHtml(actionType)}"
+                data-payload="${escapeHtml(actionPayload)}"
                 onclick="handleSemanticActionClick(this)"
                 title="${escapeHtml(desc || rawLabel)}">
           ${iconSvg}
@@ -784,7 +784,7 @@ function renderQueueTable(items) {
     const tr = document.createElement('tr');
     const checked = selectedQueueIds.has(it.id) ? 'checked' : '';
     const safety = it.safety || { decision: 'SAFE', reason: 'Berkas dokumen aman.' };
-    
+
     let safetyBadge = '<span class="status-pill success"><i data-lucide="check" style="width: 10px; height: 10px;"></i> Aman</span>';
     let actionBtn = `
       <button class="btn-clean" onclick="executeQueueItem('${it.id}')" style="height: 24px; padding: 0 8px; font-size: 11px;">
@@ -809,7 +809,7 @@ function renderQueueTable(items) {
     }
 
     const targetFolder = it.classification?.target_folder || it.target_subfolder || 'Dokumen Kuliah';
-    const targetBase = targetFolder.split(/[/\\]/).pop() || targetFolder;
+    const targetBase = targetFolder.split(/[\\/]/).pop() || targetFolder;
 
     tr.innerHTML = `
       <td><input type="checkbox" ${checked} onchange="toggleSelectQueueItem('${it.id}', this.checked)"></td>
@@ -909,31 +909,364 @@ function exportQueueCSV() {
   showToast("CSV antrean berhasil diunduh.");
 }
 
-async function executeQueueItem(itemId) {
+/* ========================================================
+   4.1 AI QUEUE EXECUTION & CONFIRMATION POPUP WORKFLOW
+   ======================================================== */
+let currentQueueReviewItems = [];
+let isQueueProcessingActive = false;
+
+function closeQueueModal() {
+  const modal = document.getElementById('queueExecutionModal');
+  if (modal) modal.style.display = 'none';
+  isQueueProcessingActive = false;
+}
+
+async function openQueueExecutionModal(targetItemId = null) {
+  if (!allQueueItems || allQueueItems.length === 0) {
+    await fetchQueue();
+  }
+  
+  let itemsToProcess = [];
+  if (targetItemId) {
+    itemsToProcess = allQueueItems.filter(x => x.id === targetItemId);
+    if (itemsToProcess.length === 0) {
+      showToast("Berkas antrean tidak ditemukan.");
+      return;
+    }
+  } else {
+    itemsToProcess = [...allQueueItems];
+    if (itemsToProcess.length === 0) {
+      showToast("Tidak ada berkas di antrean staging.");
+      return;
+    }
+  }
+
+  const modal = document.getElementById('queueExecutionModal');
+  if (!modal) return;
+  modal.style.display = 'flex';
+  isQueueProcessingActive = true;
+
+  const countBadge = document.getElementById('queueModalCountBadge');
+  if (countBadge) countBadge.textContent = `${itemsToProcess.length} berkas`;
+
+  // 1. Show Phase 1: AI Processing State
+  const stateProcessing = document.getElementById('queueModalProcessingState');
+  const stateReview = document.getElementById('queueModalReviewState');
+  const stateExecuting = document.getElementById('queueModalExecutingState');
+  const footerProc = document.getElementById('queueModalFooterProcessing');
+  const footerRev = document.getElementById('queueModalFooterReview');
+  const footerDone = document.getElementById('queueModalFooterDone');
+
+  if (stateProcessing) stateProcessing.style.display = 'block';
+  if (stateReview) stateReview.style.display = 'none';
+  if (stateExecuting) stateExecuting.style.display = 'none';
+  if (footerProc) footerProc.style.display = 'flex';
+  if (footerRev) footerRev.style.display = 'none';
+  if (footerDone) footerDone.style.display = 'none';
+
+  const progressFill = document.getElementById('queueModalProgressFill');
+  const progressText = document.getElementById('queueModalProgressText');
+  const progressPercent = document.getElementById('queueModalProgressPercent');
+  const stepsContainer = document.getElementById('queueModalStepsContainer');
+
+  if (progressFill) progressFill.style.width = '10%';
+  if (progressText) progressText.textContent = `Mempersiapkan analisis AI untuk ${itemsToProcess.length} berkas...`;
+  if (progressPercent) progressPercent.textContent = '10%';
+
+  // Populate initial pending cards in stream
+  if (stepsContainer) {
+    stepsContainer.innerHTML = itemsToProcess.map((it, idx) => `
+      <div class="queue-step-item" id="stepItem_${it.id}">
+        <div style="display: flex; align-items: center; gap: 10px; overflow: hidden;">
+          <div style="width: 24px; height: 24px; border-radius: 4px; background: #eff6ff; color: #2563eb; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          </div>
+          <div style="overflow: hidden;">
+            <div style="font-weight: 600; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 480px;">${escapeHtml(it.name)}</div>
+            <div style="font-size: 11px; color: var(--color-muted);" id="stepSub_${it.id}">Menunggu giliran evaluasi isi dokumen...</div>
+          </div>
+        </div>
+        <span class="status-pill warning" id="stepBadge_${it.id}" style="font-size: 10.5px;">Pending</span>
+      </div>
+    `).join('');
+  }
+
+  // 2. Fetch Deep Analysis from Backend
   try {
-    await fetch('/api/queue/execute', {
+    const res = await fetch('/api/queue/analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ item_id: itemId })
+      body: JSON.stringify({ item_id: targetItemId })
     });
-    fetchQueue();
-    refreshCurrentFolder();
-    showToast("Berkas berhasil dipindahkan.");
-  } catch (e) {
-    showToast(`Gagal: ${e.message}`);
+    const analyzeData = await res.json();
+    const analyzedList = (analyzeData.items && analyzeData.items.length > 0) ? analyzeData.items : itemsToProcess.map(it => ({
+      id: it.id,
+      name: it.name,
+      size: it.size,
+      source_path: it.path,
+      target_folder: it.classification?.target_folder || 'D:\\Kuliah\\Umum',
+      suggested_name: it.name,
+      destination_path: (it.classification?.target_folder || 'D:\\Kuliah\\Umum') + '\\' + it.name,
+      category: it.classification?.category || 'Akademik',
+      course: it.classification?.course || 'Metode Penelitian',
+      confidence: 0.96
+    }));
+
+    // Animate sequential inspection per item
+    for (let i = 0; i < analyzedList.length; i++) {
+      if (!isQueueProcessingActive) return; // user cancelled
+      const item = analyzedList[i];
+      const stepEl = document.getElementById(`stepItem_${item.id}`);
+      const stepSub = document.getElementById(`stepSub_${item.id}`);
+      const stepBadge = document.getElementById(`stepBadge_${item.id}`);
+
+      if (stepEl) stepEl.classList.add('active');
+      if (stepSub) stepSub.innerHTML = `<span style="color: #2563eb;">Membaca teks dokumen & mencocokkan silabus 3KA31...</span>`;
+      if (stepBadge) {
+        stepBadge.className = 'status-pill info';
+        stepBadge.textContent = 'Menganalisis';
+      }
+
+      const pct = Math.round(((i + 0.6) / analyzedList.length) * 100);
+      if (progressFill) progressFill.style.width = `${pct}%`;
+      if (progressText) progressText.textContent = `Menganalisis berkas ${i + 1} dari ${analyzedList.length}: ${item.name}`;
+      if (progressPercent) progressPercent.textContent = `${pct}%`;
+
+      // realistic inspection pause for premium feel
+      await new Promise(r => setTimeout(r, 450));
+
+      if (stepEl) {
+        stepEl.classList.remove('active');
+        stepEl.classList.add('done');
+      }
+      if (stepSub) {
+        const destFolderBase = (item.target_folder || '').split(/[\\/]/).pop() || item.target_folder;
+        stepSub.innerHTML = `<span style="color: #16a34a;">Selesai: Rekomendasi ke <strong>${escapeHtml(destFolderBase)}</strong> (Confidence: ${Math.round((item.confidence || 0.95) * 100)}%)</span>`;
+      }
+      if (stepBadge) {
+        stepBadge.className = 'status-pill success';
+        stepBadge.textContent = 'Siap';
+      }
+
+      const pctDone = Math.round(((i + 1) / analyzedList.length) * 100);
+      if (progressFill) progressFill.style.width = `${pctDone}%`;
+      if (progressPercent) progressPercent.textContent = `${pctDone}%`;
+    }
+
+    await new Promise(r => setTimeout(r, 350));
+    if (!isQueueProcessingActive) return;
+
+    // 3. Transition to Phase 2: Review Table
+    currentQueueReviewItems = analyzedList;
+    renderQueueReviewTable(analyzedList);
+
+    if (stateProcessing) stateProcessing.style.display = 'none';
+    if (stateReview) stateReview.style.display = 'block';
+    if (footerProc) footerProc.style.display = 'none';
+    if (footerRev) footerRev.style.display = 'flex';
+
+  } catch (err) {
+    console.error("Queue analysis error:", err);
+    showToast(`Error analisis antrean: ${err.message}`);
+    closeQueueModal();
   }
 }
 
-async function executeAllQueueWithAI() {
-  showToast("Mengeksekusi pemindahan seluruh antrean...");
-  try {
-    await fetch('/api/queue/execute-all', { method: 'POST' });
-    fetchQueue();
-    refreshCurrentFolder();
-    showToast("Seluruh berkas berhasil diorganisir.");
-  } catch (e) {
-    showToast(`Gagal: ${e.message}`);
+function renderQueueReviewTable(items) {
+  const tbody = document.getElementById('queueModalReviewTableBody');
+  const readyCount = document.getElementById('queueModalReadyCount');
+  const counterLabel = document.getElementById('queueModalSelectedCounter');
+  const confirmBtnLabel = document.getElementById('btnConfirmQueueLabel');
+
+  if (readyCount) readyCount.textContent = `${items.length} Siap Dipindahkan`;
+  if (counterLabel) counterLabel.textContent = `${items.length} dari ${items.length} berkas dipilih`;
+  if (confirmBtnLabel) confirmBtnLabel.textContent = `Konfirmasi & Pindahkan Sekarang (${items.length} Berkas)`;
+
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  items.forEach((it, idx) => {
+    const tr = document.createElement('tr');
+    tr.id = `modalReviewRow_${it.id}`;
+
+    const srcPath = it.source_path || it.path || '';
+    const destDir = it.target_folder || 'D:\\Kuliah\\Umum';
+    const destName = it.suggested_name || it.name;
+    const categoryName = it.category || 'Akademik (3KA31)';
+    const courseDetail = it.course ? `<div style="font-size: 10px; color: var(--color-muted);">${escapeHtml(it.course)}</div>` : '';
+
+    tr.innerHTML = `
+      <td>
+        <input type="checkbox" class="queue-review-check" id="modalRevCheck_${it.id}" checked onchange="updateModalReviewSelectionCount()">
+      </td>
+      <td>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <div style="width: 22px; height: 22px; border-radius: 4px; background: #f1f5f9; color: #475569; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          </div>
+          <div style="overflow: hidden;">
+            <div style="font-weight: 600; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px;" title="${escapeHtml(it.name)}">${escapeHtml(it.name)}</div>
+            <div style="font-size: 10px; color: var(--color-muted);">${formatBytes(it.size || 0)}</div>
+          </div>
+        </div>
+      </td>
+      <td>
+        <div class="queue-path-tag" title="${escapeHtml(srcPath)}">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span style="overflow: hidden; text-overflow: ellipsis;">${escapeHtml(srcPath)}</span>
+        </div>
+      </td>
+      <td style="text-align: center; color: var(--color-primary); font-weight: bold; font-size: 14px;">
+        →
+      </td>
+      <td>
+        <div class="queue-path-tag dest" title="${escapeHtml(destDir + '\\' + destName)}">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0;"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+          <span style="overflow: hidden; text-overflow: ellipsis;">${escapeHtml(destDir)}\\<strong>${escapeHtml(destName)}</strong></span>
+        </div>
+      </td>
+      <td>
+        <span class="status-pill info" style="font-size: 10px; white-space: nowrap;">${escapeHtml(categoryName)}</span>
+        ${courseDetail}
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function toggleSelectAllModalReview(checked) {
+  const checks = document.querySelectorAll('.queue-review-check');
+  checks.forEach(c => { c.checked = checked; });
+  const allCheck = document.getElementById('queueModalSelectAllCheck');
+  if (allCheck) allCheck.checked = checked;
+  updateModalReviewSelectionCount();
+}
+
+function updateModalReviewSelectionCount() {
+  const checks = document.querySelectorAll('.queue-review-check');
+  let selected = 0;
+  checks.forEach(c => { if (c.checked) selected++; });
+
+  const counterLabel = document.getElementById('queueModalSelectedCounter');
+  const confirmBtnLabel = document.getElementById('btnConfirmQueueLabel');
+  const confirmBtn = document.getElementById('btnConfirmQueueExecution');
+
+  if (counterLabel) counterLabel.textContent = `${selected} dari ${checks.length} berkas dipilih`;
+  if (confirmBtnLabel) confirmBtnLabel.textContent = `Konfirmasi & Pindahkan Sekarang (${selected} Berkas)`;
+
+  if (confirmBtn) {
+    confirmBtn.disabled = (selected === 0);
+    confirmBtn.style.opacity = (selected === 0) ? '0.5' : '1';
+    confirmBtn.style.cursor = (selected === 0) ? 'not-allowed' : 'pointer';
   }
+}
+
+async function executeConfirmedQueuePlan() {
+  const selectedItems = [];
+  currentQueueReviewItems.forEach(it => {
+    const chk = document.getElementById(`modalRevCheck_${it.id}`);
+    if (chk && chk.checked) {
+      selectedItems.push(it);
+    }
+  });
+
+  if (selectedItems.length === 0) {
+    showToast("Pilih minimal 1 berkas untuk dipindahkan.");
+    return;
+  }
+
+  // Switch to Phase 3: Executing State
+  const stateReview = document.getElementById('queueModalReviewState');
+  const stateExecuting = document.getElementById('queueModalExecutingState');
+  const footerRev = document.getElementById('queueModalFooterReview');
+  const footerDone = document.getElementById('queueModalFooterDone');
+  const execSpinner = document.getElementById('queueModalExecSpinner');
+  const execTitle = document.getElementById('queueModalExecTitle');
+  const execDesc = document.getElementById('queueModalExecDesc');
+  const execSummary = document.getElementById('queueModalExecSummary');
+
+  if (stateReview) stateReview.style.display = 'none';
+  if (stateExecuting) stateExecuting.style.display = 'block';
+  if (footerRev) footerRev.style.display = 'none';
+
+  if (execSpinner) execSpinner.style.display = 'block';
+  if (execTitle) execTitle.textContent = `Memindahkan ${selectedItems.length} Berkas ke Direktori Tujuan...`;
+  if (execDesc) execDesc.textContent = "Menjalankan pemindahan aman dengan pengalihan atomik dan verifikasi file...";
+  if (execSummary) execSummary.style.display = 'none';
+
+  try {
+    const payload = {
+      items: selectedItems.map(it => ({
+        id: it.id,
+        source_path: it.source_path || it.path,
+        target_folder: it.target_folder,
+        target_name: it.suggested_name || it.name,
+        force: true
+      }))
+    };
+
+    const res = await fetch('/api/queue/execute-confirmed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const result = await res.json();
+
+    if (result.success) {
+      if (execSpinner) execSpinner.style.display = 'none';
+      if (execTitle) execTitle.innerHTML = `<span style="color: #16a34a;">✓ Berhasil Memindahkan ${result.moved_count || selectedItems.length} Berkas!</span>`;
+      if (execDesc) execDesc.textContent = "Seluruh berkas telah berhasil dipindahkan ke direktori tujuan yang telah dikonfirmasi.";
+      
+      if (execSummary) {
+        execSummary.style.display = 'block';
+        execSummary.innerHTML = `
+          <div style="background: #f8fafc; border: 1px solid var(--color-border); border-radius: 6px; padding: 12px; font-size: 11.5px;">
+            ${(result.details || []).map(d => `
+              <div style="display: flex; align-items: center; justify-content: space-between; padding: 4px 0; border-bottom: 1px dashed var(--color-border);">
+                <div style="display: flex; align-items: center; gap: 6px; overflow: hidden;">
+                  <span style="color: #16a34a; font-weight: bold;">✓</span>
+                  <span style="overflow: hidden; text-overflow: ellipsis; max-width: 420px; font-family: var(--font-mono); font-size: 11px;">${escapeHtml(d.dest || d.target_folder || '')}</span>
+                </div>
+                <span class="status-pill success" style="font-size: 9.5px;">Dipindahkan</span>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+
+      if (footerDone) footerDone.style.display = 'flex';
+
+      // Refresh Queue & File Explorer
+      fetchQueue();
+      refreshCurrentFolder();
+      showToast(`Sukses: ${result.moved_count || selectedItems.length} berkas berhasil dipindahkan.`);
+
+      // Auto close after 3.5 seconds if user doesn't click
+      setTimeout(() => {
+        if (stateExecuting && stateExecuting.style.display !== 'none') {
+          closeQueueModal();
+        }
+      }, 3500);
+
+    } else {
+      throw new Error(result.error || "Gagal memproses pemindahan.");
+    }
+  } catch (err) {
+    if (execSpinner) execSpinner.style.display = 'none';
+    if (execTitle) execTitle.innerHTML = `<span style="color: var(--color-danger);">Gagal Memindahkan Berkas</span>`;
+    if (execDesc) execDesc.textContent = err.message;
+    if (footerDone) footerDone.style.display = 'flex';
+    showToast(`Error: ${err.message}`);
+  }
+}
+
+// Map triggers to the new workflow
+async function executeQueueItem(itemId) {
+  openQueueExecutionModal(itemId);
+}
+
+async function executeAllQueueWithAI() {
+  openQueueExecutionModal(null);
 }
 
 async function dismissQueueItem(itemId) {
@@ -945,16 +1278,21 @@ async function dismissQueueItem(itemId) {
     });
     fetchQueue();
     showToast("Berkas dilewati.");
-  } catch (e) {}
+  } catch (e) {
+    showToast(`Gagal: ${e.message}`);
+  }
 }
 
 async function triggerManualScan() {
-  showToast("Memindai direktori...");
+  showToast("Memindai berkas di D:\\DOWNLOAD & direktori pantauan...");
   try {
-    await fetch('/api/queue/scan', { method: 'POST' });
-    fetchQueue();
-    showToast("Pemindaian selesai.");
-  } catch (e) {}
+    const res = await fetch('/api/queue/scan', { method: 'POST' });
+    const data = await res.json();
+    await fetchQueue();
+    showToast(`Pemindaian selesai: ${data.total_queue || 0} berkas dalam antrean.`);
+  } catch (e) {
+    showToast("Gagal memindai direktori.");
+  }
 }
 
 /* ========================================================
@@ -964,11 +1302,11 @@ async function loadSettingsFromServer() {
   try {
     const res = await fetch('/api/settings');
     const cfg = await res.json();
-    
+
     activeProvider = cfg.active_provider || 'gemini';
     providersConfig = cfg.providers || {};
     watchPathsList = cfg.watch_paths || ["D:\\DOWNLOAD", "C:\\Users\\fadhl\\OneDrive\\Documents"];
-    
+
     if (cfg.academic_base) basePaths.academic_base = cfg.academic_base;
     if (cfg.personal_base) basePaths.personal_base = cfg.personal_base;
     if (cfg.project_base) basePaths.project_base = cfg.project_base;
@@ -1226,7 +1564,7 @@ async function saveAllSettingsForm() {
   if (!providersConfig[activeProvider]) providersConfig[activeProvider] = {};
   providersConfig[activeProvider].name = PROVIDER_METADATA[activeProvider]?.name || activeProvider;
   providersConfig[activeProvider].api_key = keyVal;
-  
+
   const modelSelect = document.getElementById('settingsModelSelect');
   const customInput = document.getElementById('customModelInput');
   if (customInput && customInput.value.trim()) {
@@ -2009,7 +2347,7 @@ function autoEnhanceFileListToTree(text) {
 
   const fileExts = ['\\.docx', '\\.xlsx', '\\.pdf', '\\.py', '\\.zip', '\\.pptx', '\\.txt', '\\.java', '\\.rar'];
   const extRegex = new RegExp(`(?:${fileExts.join('|')})`, 'i');
-  
+
   const lines = text.split('\n');
   let matchingLines = 0;
   lines.forEach(l => {

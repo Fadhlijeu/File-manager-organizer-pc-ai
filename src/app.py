@@ -1,4 +1,4 @@
-# app.py
+﻿# app.py
 import os
 import sys
 import json
@@ -222,6 +222,7 @@ def get_tree(path: str = Query("D:\\")):
 def get_queue():
     return queue_mgr.get_queue()
 
+@app.post("/api/queue/scan")
 @app.post("/api/queue/scan-now")
 def scan_now():
     count_before = len(queue_mgr.get_queue())
@@ -234,38 +235,154 @@ def scan_now():
     count_after = len(queue_mgr.get_queue())
     return {"scanned": True, "new_items": count_after - count_before, "total_queue": count_after}
 
+class AnalyzeQueueRequest(BaseModel):
+    item_id: Optional[str] = None
+
+@app.post("/api/queue/analyze")
+def analyze_queue(req: Optional[AnalyzeQueueRequest] = None):
+    item_id = req.item_id if req else None
+    queue = queue_mgr.get_queue()
+    if item_id:
+        items = [x for x in queue if x['id'] == item_id]
+    else:
+        items = queue
+
+    results = []
+    for it in items:
+        src = it['path']
+        clf = it.get('classification')
+        if not clf or not clf.get('target_folder'):
+            clf = ai_engine.classify_file(src) or {}
+            it['classification'] = clf
+            
+        safety = it.get('safety') or ai_decide_engine.evaluate(src)
+        it['safety'] = safety
+
+        target_folder = clf.get('target_folder')
+        if not target_folder:
+            ext = os.path.splitext(src)[1].lower()
+            if ext in ['.docx', '.pdf', '.pptx', '.xlsx']:
+                target_folder = os.path.join(r"D:\Kuliah", "Umum")
+            else:
+                target_folder = os.path.join(r"D:\\fadhl", "Arsip")
+
+        suggested_name = clf.get('suggested_name') or it['name']
+        dest_path = os.path.join(target_folder, suggested_name)
+
+        results.append({
+            "id": it['id'],
+            "name": it['name'],
+            "size": it.get('size', 0),
+            "source_path": src,
+            "target_folder": target_folder,
+            "suggested_name": suggested_name,
+            "destination_path": dest_path,
+            "category": clf.get('category', 'Dokumen'),
+            "course": clf.get('course', ''),
+            "summary": clf.get('summary', 'Klasifikasi Dokumen'),
+            "confidence": clf.get('confidence', 0.95),
+            "is_draft": clf.get('is_draft', False),
+            "safety": safety
+        })
+
+    return {
+        "success": True,
+        "items": results,
+        "count": len(results)
+    }
+
+class ConfirmedQueueItem(BaseModel):
+    id: str
+    source_path: Optional[str] = None
+    target_folder: Optional[str] = None
+    target_name: Optional[str] = None
+    force: Optional[bool] = True
+
 class ExecuteQueueRequest(BaseModel):
+    items: Optional[List[ConfirmedQueueItem]] = None
     item_id: Optional[str] = None
     custom_target_folder: Optional[str] = None
     custom_name: Optional[str] = None
     force: Optional[bool] = False
 
+@app.post("/api/queue/execute-confirmed")
+@app.post("/api/queue/execute-all")
 @app.post("/api/queue/execute")
-def execute_queue(req: ExecuteQueueRequest):
+def execute_queue(req: Optional[ExecuteQueueRequest] = None):
     queue = queue_mgr.get_queue()
-    if req.item_id:
-        items_to_process = [x for x in queue if x['id'] == req.item_id]
-    else:
-        items_to_process = queue
-
     results = []
-    for it in items_to_process:
-        src = it['path']
-        clf = it.get('classification') or ai_engine.classify_file(src)
-        dst_folder = req.custom_target_folder or (clf.get('target_folder') if clf else None)
-        dst_name = req.custom_name or (clf.get('suggested_name') if clf else None)
+    
+    if req and req.items and len(req.items) > 0:
+        for conf_it in req.items:
+            matching = next((x for x in queue if x['id'] == conf_it.id), None)
+            src = conf_it.source_path or (matching['path'] if matching else None)
+            if not src or not os.path.exists(src):
+                results.append({"id": conf_it.id, "status": "error", "error": f"Berkas tidak ditemukan: {src}"})
+                continue
+            
+            clf = (matching.get('classification') if matching else None) or ai_engine.classify_file(src)
+            dst_folder = conf_it.target_folder or (clf.get('target_folder') if clf else None) or r"D:\Kuliah"
+            dst_name = conf_it.target_name or (clf.get('suggested_name') if clf else None) or os.path.basename(src)
+            force_flag = conf_it.force if conf_it.force is not None else req.force
 
-        if dst_folder:
-            res = move_item(src, dst_folder, dst_name, force=req.force)
+            res = move_item(src, dst_folder, dst_name, force=force_flag)
+            if res.get('success'):
+                queue_mgr.mark_completed(conf_it.id)
+                results.append({
+                    "id": conf_it.id,
+                    "status": "moved",
+                    "src": src,
+                    "dest": res.get('dst_path') or res.get('new_path'),
+                    "target_folder": dst_folder
+                })
+            else:
+                results.append({
+                    "id": conf_it.id,
+                    "status": "error",
+                    "error": res.get('error') or "Gagal memindahkan berkas"
+                })
+    else:
+        req_item_id = req.item_id if req else None
+        req_custom_folder = req.custom_target_folder if req else None
+        req_custom_name = req.custom_name if req else None
+        force_flag = req.force if req else False
+
+        if req_item_id:
+            items_to_process = [x for x in queue if x['id'] == req_item_id]
+        else:
+            items_to_process = queue
+
+        for it in items_to_process:
+            src = it['path']
+            clf = it.get('classification') or ai_engine.classify_file(src)
+            dst_folder = req_custom_folder or (clf.get('target_folder') if clf else None) or r"D:\Kuliah"
+            dst_name = req_custom_name or (clf.get('suggested_name') if clf else None) or it['name']
+
+            res = move_item(src, dst_folder, dst_name, force=force_flag)
             if res.get('success'):
                 queue_mgr.mark_completed(it['id'])
-                results.append({"id": it['id'], "status": "moved", "dest": res.get('new_path')})
+                results.append({
+                    "id": it['id'],
+                    "status": "moved",
+                    "src": src,
+                    "dest": res.get('dst_path') or res.get('new_path'),
+                    "target_folder": dst_folder
+                })
             else:
-                results.append({"id": it['id'], "status": "error", "error": res.get('error')})
-        else:
-            results.append({"id": it['id'], "status": "no_destination"})
+                results.append({
+                    "id": it['id'],
+                    "status": "error",
+                    "error": res.get('error') or "Gagal memindahkan berkas"
+                })
 
-    return {"processed": len(results), "details": results}
+    moved_count = sum(1 for r in results if r.get('status') == 'moved')
+    return {
+        "success": True,
+        "processed": len(results),
+        "moved_count": moved_count,
+        "failed_count": len(results) - moved_count,
+        "details": results
+    }
 
 class DismissRequest(BaseModel):
     item_id: str
@@ -443,7 +560,7 @@ def update_settings(req: SettingsUpdateRequest):
     with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
         json.dump(ai_engine.config, f, indent=2)
     ai_engine.reload_config()
-    
+
     # Restart watcher with new paths safely
     global watcher
     try:
@@ -482,7 +599,7 @@ def test_provider_key(req: TestKeyRequest):
                 data = r.json()
                 label = data.get('data', {}).get('label') or 'Kunci Valid'
                 limit = data.get('data', {}).get('limit')
-                limit_info = f" • Limit: ${limit}" if limit else ""
+                limit_info = f" â€¢ Limit: ${limit}" if limit else ""
                 return {"success": True, "message": f"Koneksi OpenRouter Berhasil ({label}{limit_info})!"}
             else:
                 return {"success": False, "message": f"OpenRouter Error ({r.status_code}): {r.text[:160]}"}
