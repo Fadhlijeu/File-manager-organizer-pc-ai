@@ -131,11 +131,139 @@ class AgentToolbox:
             return f"Error listing directory: {str(e)}"
 
     @staticmethod
-    def search(path: str, pattern: str, max_results: int = 30) -> str:
-        """Searches files by name or glob pattern with fast exclusion of deep bloat directories."""
-        cmd = f"$ex = @('node_modules', '.git', 'venv', '.venv', 'AppData', 'SteamLibrary', 'build', 'dist'); Get-ChildItem -Path '{path}' -Recurse -Filter '*{pattern}*' -ErrorAction SilentlyContinue | Where-Object {{ $p = $_.FullName; -not ($ex | Where-Object {{ $p -match [regex]::Escape($_) }}) }} | Select-Object -First {max_results} FullName, Length"
-        return AgentToolbox.powershell_exec(cmd, cwd=path)
+    def python_exec(code: str, cwd: Optional[str] = None) -> str:
+        """Executes a standalone Python script safely with timeout and captures output."""
+        dangerous = ['format_volume', 'diskpart', 'os.system("del', 'shutil.rmtree("c:']
+        code_lower = code.lower()
+        for d in dangerous:
+            if d in code_lower:
+                return f"Error: Command blocked by AgentOS security policy (dangerous pattern: {d})"
+        
+        dangerous_delete = ['os.remove', 'os.unlink', 'shutil.rmtree']
+        if any(dd in code_lower for dd in dangerous_delete):
+            return "BLOCKED BY SAFETY GUARD: Direct file deletion via python_exec is disabled. Gunakan tool 'safe_delete' setelah meminta konfirmasi eksplisit kepada pengguna."
 
+        try:
+            if not cwd or not os.path.exists(cwd):
+                cwd = "D:\\" if os.path.exists("D:\\") else "C:\\"
+                
+            import sys
+            res = subprocess.run(
+                [sys.executable, "-c", code],
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                encoding="utf-8",
+                errors="replace"
+            )
+            out = res.stdout.strip()
+            err = res.stderr.strip()
+            if err and not out:
+                return f"[Python Error (Exit {res.returncode})]:\n{err}"
+            elif err and out:
+                return f"{out}\n\n[Warnings/Stderr]:\n{err}"
+            return out if out else "(Python script executed successfully with no output)"
+        except subprocess.TimeoutExpired:
+            return "Error: Python execution timed out after 30 seconds."
+        except Exception as e:
+            return f"Error executing Python: {str(e)}"
+
+    @staticmethod
+    def search(path: str, pattern: str, max_results: int = 40) -> str:
+        """Searches files by name or pattern using high-speed native Python with priority folders and bloat pruning."""
+        import fnmatch
+        import time as _t
+        try:
+            pattern_clean = pattern.strip('*\"\' ').lower()
+            if not pattern_clean:
+                return "Error: Pola pencarian (pattern) tidak boleh kosong."
+
+            skip_dirs = {
+                'node_modules', '.git', 'venv', '.venv', '$recycle.bin', 
+                'appdata', 'steamlibrary', 'build', 'dist', '.gradle', 
+                '.pnpm-store', '.local', '.cache', 'system volume information',
+                'windowsapps', 'deliveryoptimization', 'wpsystem', 'laragon',
+                'program files', 'android', 'flutter', '__pycache__', 'game'
+            }
+
+            results = []
+            seen_paths = set()
+            is_drive_root = not path or path.strip() in ['D:\\', 'D:', 'd:\\', 'd:', 'C:\\', 'C:', 'c:\\', 'c:']
+
+            def scan_dir(target_dir):
+                if not os.path.exists(target_dir):
+                    return
+                for root, dirs, files in os.walk(target_dir, topdown=True):
+                    dirs[:] = [
+                        d for d in dirs 
+                        if d.lower() not in skip_dirs 
+                        and not d.startswith('$') 
+                        and not (d.startswith('.') and d.lower() not in ['.github'])
+                    ]
+                    for f in files:
+                        f_lower = f.lower()
+                        if (pattern_clean in f_lower) or fnmatch.fnmatch(f_lower, f"*{pattern_clean}*"):
+                            full_path = os.path.normpath(os.path.join(root, f))
+                            if full_path not in seen_paths:
+                                seen_paths.add(full_path)
+                                try:
+                                    sz = os.path.getsize(full_path)
+                                    mtime = _t.strftime('%Y-%m-%d %H:%M:%S', _t.localtime(os.path.getmtime(full_path)))
+                                    results.append(f"{full_path} ({sz} bytes, modified: {mtime})")
+                                except Exception:
+                                    results.append(full_path)
+                                if len(results) >= max_results:
+                                    return
+                    if len(results) >= max_results:
+                        return
+
+            if is_drive_root and os.path.exists("D:\\"):
+                # Tier 1: Check primary user hubs where 99.9% of user documents live
+                priority_hubs = [r"D:\DOWNLOAD", r"D:\Kuliah", r"D:\fadhl", r"D:\PROJECT"]
+                for hub in priority_hubs:
+                    scan_dir(hub)
+                    if len(results) >= max_results:
+                        break
+
+                # If found in primary hubs, return immediately (sub-second response!)
+                if not results:
+                    # Tier 2: Search remaining D: drive
+                    for root, dirs, files in os.walk(r"D:\\", topdown=True):
+                        dirs[:] = [
+                            d for d in dirs 
+                            if d.lower() not in skip_dirs 
+                            and d.lower() not in {'download', 'kuliah', 'fadhl', 'project'}
+                            and not d.startswith('$') 
+                            and not d.startswith('.')
+                        ]
+                        for f in files:
+                            f_lower = f.lower()
+                            if (pattern_clean in f_lower) or fnmatch.fnmatch(f_lower, f"*{pattern_clean}*"):
+                                full_path = os.path.normpath(os.path.join(root, f))
+                                if full_path not in seen_paths:
+                                    seen_paths.add(full_path)
+                                    try:
+                                        sz = os.path.getsize(full_path)
+                                        mtime = _t.strftime('%Y-%m-%d %H:%M:%S', _t.localtime(os.path.getmtime(full_path)))
+                                        results.append(f"{full_path} ({sz} bytes, modified: {mtime})")
+                                    except Exception:
+                                        results.append(full_path)
+                                    if len(results) >= max_results:
+                                        break
+                        if len(results) >= max_results:
+                            break
+            else:
+                target_p = path if (path and os.path.exists(path)) else ("D:\\" if os.path.exists("D:\\") else "C:\\")
+                scan_dir(target_p)
+
+            if not results:
+                return f"Tidak ditemukan berkas yang cocok dengan pola '{pattern}' di {path}."
+            
+            summary = f"Ditemukan {len(results)} berkas cocok dengan '{pattern}':\n"
+            return summary + "\n".join(results)
+        except Exception as e:
+            return f"Error saat mencari berkas: {str(e)}"
     @staticmethod
     def read_doc(path: str, max_chars: int = 2500) -> str:
         """Extracts text content from documents (.pdf, .docx, .pptx, .xlsx, .txt, source code)."""
@@ -253,14 +381,16 @@ class PathResolver:
                 if resolved_path:
                     break
 
-        # 4. Fallback search via powershell for files
+        # 4. Fallback search via fast python search for files
         if not resolved_path and mtype == 'file':
             try:
-                cmd = f"Get-ChildItem -Path 'D:\\' -Recurse -Filter '*{clean_val}*' -ErrorAction SilentlyContinue -File | Select-Object -First 1 -ExpandProperty FullName"
-                res = subprocess.run(["powershell", "-NoProfile", "-Command", cmd], capture_output=True, text=True, timeout=5)
-                out = res.stdout.strip()
-                if out and os.path.exists(out):
-                    resolved_path = out
+                search_out = AgentToolbox.search("D:\\", clean_val, max_results=1)
+                for line in search_out.splitlines():
+                    if line.startswith("D:\\") or line.startswith("C:\\"):
+                        cand = line.split(" (")[0].strip()
+                        if os.path.exists(cand):
+                            resolved_path = cand
+                            break
             except Exception:
                 pass
 
@@ -409,6 +539,10 @@ class AutonomousAgent:
                 cmd = args.get('command', '')
                 cwd = args.get('cwd', current_path)
                 return self.toolbox.powershell_exec(cmd, cwd=cwd)
+            elif action_name == 'python_exec':
+                code = args.get('code', '')
+                cwd = args.get('cwd', current_path)
+                return self.toolbox.python_exec(code, cwd=cwd)
             elif action_name == 'list_directory':
                 path = args.get('path', current_path)
                 rec = args.get('recursive', False)
@@ -469,11 +603,13 @@ INFORMASI HOST & KONTEKS:
 
 DAFTAR TOOLS TERSEDIA:
 1. powershell_exec(command: str, cwd: str)
-   Jalankan query atau script PowerShell apa pun (contoh: menghitung berkas secara rekursif `(Get-ChildItem -Path 'D:\\Kuliah' -Recurse -File).Count`, mencari berkas, mengukur ukuran folder, grouping, filtering).
-2. list_directory(path: str, recursive: bool, max_items: int)
-   Melihat isi folder.
+   Jalankan query atau script PowerShell pada sistem host Windows (manajemen proses, service, disk drive, dsb).
+2. python_exec(code: str, cwd: str)
+   Jalankan script Python standalone di host untuk komputasi analitik, manipulasi teks/data, regex, pencarian berkas kustom, hashing, atau kalkulasi file yang sangat cepat tanpa limitasi pipeline PowerShell.
 3. search_files(path: str, pattern: str)
-   Mencari berkas berdasarkan pola nama/ekstensi.
+   Pencarian berkas ultra-cepat bertenaga Python native Win32. Otomatis memprioritaskan D:\DOWNLOAD, D:\Kuliah, D:\fadhl, D:\PROJECT dan memotong direktori bloat. Sangat cocok untuk mencari berkas apa pun di drive D: dalam hitungan milidetik.
+4. list_directory(path: str, recursive: bool, max_items: int)
+   Melihat isi folder.
 4. read_document(path: str)
    Membaca dan mengekstrak isi teks berkas dokumen (PDF, Word DOCX, PPTX, Excel XLSX, TXT, Kode).
 5. safe_move(src: str, dst_folder: str, new_name: str)
@@ -496,7 +632,7 @@ FORMAT OUTPUT WAJIB:
 Pada SETIAP giliran (turn), Anda HARUS merespons HANYA dalam format JSON murni berikut:
 {{
   "thought": "Penjelasan singkat apa yang Anda amati, rencana tindakan Anda, atau alasan memilih tool ini.",
-  "action": "powershell_exec" | "list_directory" | "search_files" | "read_document" | "safe_move" | "safe_rename" | "safe_delete" | "create_folder" | "get_course_catalog" | "finish",
+  "action": "powershell_exec" | "python_exec" | "list_directory" | "search_files" | "read_document" | "safe_move" | "safe_rename" | "safe_delete" | "create_folder" | "get_course_catalog" | "finish",
   "args": {{ ... parameter sesuai tool di atas ... }}
 }}
 
@@ -545,8 +681,15 @@ Semester 3KA31 | 22 | 17.3% materi perkuliahan | #d97706
 :::
 
 - Jawaban final (`final_answer`) HARUS berupa Markdown informatif yang rapi, menyajikan angka konkret, path absolut Windows, dan widget di atas.
-- KRITIS - DELETE SAFETY: Jika user meminta hapus file, JANGAN langsung eksekusi safe_delete atau Remove-Item di PowerShell. Wajib gunakan `finish` terlebih dahulu dengan final_answer yang meminta konfirmasi dari user: "Apakah Anda yakin ingin menghapus [nama file]? Balas 'ya hapus' untuk mengkonfirmasi."
-- Setelah user membalas dengan konfirmasi eksplisit ('ya', 'ya hapus', dll), barulah eksekusi penghapusan dengan menambahkan confirmed=True dalam args safe_delete."""
+- KRITIS - CARI & HAPUS FILE SAFETY:
+  1. Jika pengguna meminta "cari dan hapus [nama berkas]", SEGERA panggil search_files(path="D:\\", pattern="[nama berkas]") terlebih dahulu!
+  2. Begitu berkas ditemukan, SAJIKAN konfirmasi final_answer dengan widget :::action-btn atau teks konfirmasi yang menyertakan path absolut berkas yang ditemukan:
+     :::action-btn
+     [Ya, Hapus Sekarang] | danger | crud_delete:<PATH_ABSOLUT_BERKAS> | Konfirmasi hapus berkas ke Recycle Bin
+     [Batalkan] | secondary | chat:Batalkan penghapusan | Batal
+     :::
+  3. DILARANG KERAS langsung menghapus sebelum konfirmasi eksplisit dari pengguna!
+- Setelah user membalas konfirmasi ('ya', 'ya hapus', klik tombol), barulah panggil safe_delete dengan confirmed=True."""
 
         current_prompt = f"Permintaan Pengguna: {user_prompt}"
         # Smart Confirmation Resolver: If user confirms deletion, detect target file from dialogue history
@@ -558,7 +701,11 @@ Semester 3KA31 | 22 | 17.3% materi perkuliahan | #d97706
                     last_assistant_msg = msg.get('content', '')
                     break
             # Look for mentioned file path or filename in last assistant message
-            found_paths = re.findall(r'[a-zA-Z]:\\[^\s\n\r"\'\`<>|*?]+', last_assistant_msg)
+            found_paths = re.findall(r'`([a-zA-Z]:\\[^`\r\n]+)`', last_assistant_msg)
+            if not found_paths:
+                found_paths = re.findall(r'([a-zA-Z]:\\[^\n\r"\'<>|*?]+?\.[a-zA-Z0-9]{2,5})', last_assistant_msg)
+            if not found_paths:
+                found_paths = re.findall(r'[a-zA-Z]:\\[^\s\n\r"\'\`<>|*?]+', last_assistant_msg)
             found_files = re.findall(r'([a-zA-Z0-9_\-\s]+\.(?:xlsx|docx|pdf|txt|py|zip|rar|pptx))', last_assistant_msg, re.IGNORECASE)
             if found_paths:
                 current_prompt += f"\n[SISTEM DETEKSI KONFIRMASI]: Pengguna mengkonfirmasi tindakan penghapusan untuk path: '{found_paths[0]}'. Segera eksekusi safe_delete atau powershell_exec Remove-Item untuk berkas ini dengan confirmed=True!"
@@ -763,7 +910,7 @@ Semester 3KA31 | 22 | 17.3% materi perkuliahan | #d97706
             'actions_taken': actions_taken
         }
 
-    def _run_local_autonomous_agent(self, user_prompt: str, current_path: str, mentioned_items: List[str], resolved_mentions: List[dict] = None) -> Dict[str, Any]:
+    def _run_local_autonomous_agent(self, user_prompt: str, current_path: str, mentioned_items: List[str], resolved_mentions: List[dict] = None, dialogue_history: List[dict] = None) -> Dict[str, Any]:
         """
         Deterministic Local Autonomous Agent (runs offline with real PowerShell execution).
         Solves queries dynamically without cloud APIs.
@@ -782,10 +929,34 @@ Semester 3KA31 | 22 | 17.3% materi perkuliahan | #d97706
                         target_file = rm['resolved_path']
                         break
             if not target_file:
-                m = re.search(r'(?:hapus|delete|remove)\s+(?:file|berkas)?\s*([^\s,]+)', user_prompt, re.I)
+                m = re.search(r'(?:hapus|delete|remove)\s+(?:file|berkas)?\s*(.+)', user_prompt, re.I)
                 if m:
-                    target_file = m.group(1).strip('"\'')
+                    target_file = m.group(1).strip('"\' ')
             
+            # If user simply confirms (e.g. 'ya hapus') without repeating the path, resolve from previous assistant message
+            if (not target_file or target_file.lower() in ['ini', 'itu', 'berkas ini', 'file ini']) and dialogue_history:
+                for msg in reversed(dialogue_history):
+                    if msg.get('role') == 'assistant':
+                        last_msg = msg.get('content', '')
+                        found_paths = re.findall(r'`([a-zA-Z]:\\[^`\r\n]+)`', last_msg)
+                        if not found_paths:
+                            found_paths = re.findall(r'([a-zA-Z]:\\[^\n\r"\'<>|*?]+?\.[a-zA-Z0-9]{2,5})', last_msg)
+                        if not found_paths:
+                            found_paths = re.findall(r'[a-zA-Z]:\\[^\s\n\r"\'\`<>|*?]+', last_msg)
+                        if found_paths:
+                            target_file = found_paths[0].rstrip('`.,')
+                            break
+
+            # If target_file is not an existing absolute path, search for it dynamically using fast search!
+            if target_file and not os.path.exists(target_file):
+                search_res = self.toolbox.search("D:\\", target_file, max_results=1)
+                for sline in search_res.splitlines():
+                    if sline.startswith("D:\\") or sline.startswith("C:\\"):
+                        cand = sline.split(" (")[0].strip()
+                        if os.path.exists(cand):
+                            target_file = cand
+                            break
+
             if not is_confirmed:
                 events.append({
                     'step': 1,
@@ -801,7 +972,12 @@ Sistem keselamatan OmniFile AI mendeteksi operasi penghapusan file. Untuk menceg
 - **Target Berkas**: `{target_file or 'berkas yang dimaksud'}`
 - **Tindakan**: Berkas akan dipindahkan secara aman ke Windows Recycle Bin.
 
-> Mohon konfirmasi: Balas **"ya hapus"** jika Anda yakin ingin memindahkan berkas ini ke Recycle Bin."""
+:::action-btn
+[Ya, Hapus Sekarang] | danger | crud_delete:{target_file} | Konfirmasi hapus berkas ke Recycle Bin
+[Batalkan] | secondary | chat:Batalkan penghapusan berkas | Batal
+:::
+
+> Mohon konfirmasi: Klik tombol di atas atau balas **"ya hapus"** jika Anda yakin ingin memindahkan berkas ini ke Recycle Bin."""
                 return {'reply': reply, 'events': events, 'actions_taken': []}
             else:
                 del_res = self.toolbox.delete_trash(target_file) if target_file else "Nama file tidak spesifik."
@@ -945,14 +1121,13 @@ Agen telah memindai berkas-berkas di folder ini. Berikut adalah tindakan terenca
             if mentioned_items:
                 search_path = mentioned_items[0]
 
-            thought_1 = f"Menjalankan pencarian rekursif berkas dengan kata kunci '{keyword}' di `{search_path}`."
-            cmd_search = f"Get-ChildItem -Path '{search_path}' -Recurse -Filter '*{keyword}*' -ErrorAction SilentlyContinue | Select-Object -First 15 FullName, Length | Format-Table -AutoSize"
-            out_search = self.toolbox.powershell_exec(cmd_search)
+            thought_1 = f"Menjalankan pencarian cepat berkas dengan kata kunci '{keyword}' di `{search_path}`."
+            out_search = self.toolbox.search(search_path, keyword, max_results=20)
             events.append({
                 'step': 1,
                 'thought': thought_1,
-                'tool': 'powershell_exec',
-                'args': {'command': cmd_search},
+                'tool': 'search_files',
+                'args': {'path': search_path, 'pattern': keyword},
                 'output': out_search
             })
 
